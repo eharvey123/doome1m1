@@ -27,6 +27,10 @@ export class WebGpuRenderer {
   private canvas: HTMLCanvasElement;
   private mapData!: MapData;
   private floorTriangles: Triangle[] = [];
+  
+  private triBuffer!: GPUBuffer;
+  private triangles!: Triangle[];
+  private bvhNodes!: BvhNode[];
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -34,6 +38,8 @@ export class WebGpuRenderer {
 
   async init(triangles: Triangle[], bvhNodes: BvhNode[], mapData: MapData, materials: MaterialDef[], atlasBuilder: TextureAtlasBuilder) {
     this.mapData = mapData;
+    this.triangles = triangles;
+    this.bvhNodes = bvhNodes;
     this.floorTriangles = triangles.filter(t => t.normal[1] > 0.9);
     if (!navigator.gpu) throw new Error("WebGPU not supported");
     const adapter = await navigator.gpu.requestAdapter();
@@ -49,12 +55,12 @@ export class WebGpuRenderer {
 
     // Create Buffers
     const triBufferSize = triangles.length * 96; // 96 bytes per Triangle (24 floats)
-    const triBuffer = this.device.createBuffer({
+    this.triBuffer = this.device.createBuffer({
       size: triBufferSize,
-      usage: GPUBufferUsage.STORAGE,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
       mappedAtCreation: true,
     });
-    const triMapped = triBuffer.getMappedRange();
+    const triMapped = this.triBuffer.getMappedRange();
     const triArray = new Float32Array(triMapped);
     const triUintArray = new Uint32Array(triMapped);
     for (let i = 0; i < triangles.length; i++) {
@@ -63,16 +69,18 @@ export class WebGpuRenderer {
       triArray[offset+0] = t.v0[0]; triArray[offset+1] = t.v0[1]; triArray[offset+2] = t.v0[2];
       triUintArray[offset+3] = t.materialIndex;
       triArray[offset+4] = t.v1[0]; triArray[offset+5] = t.v1[1]; triArray[offset+6] = t.v1[2];
+      triArray[offset+7] = t.emissivity;
       triArray[offset+8] = t.v2[0]; triArray[offset+9] = t.v2[1]; triArray[offset+10] = t.v2[2];
       triArray[offset+12] = t.normal[0]; triArray[offset+13] = t.normal[1]; triArray[offset+14] = t.normal[2];
       
       triArray[offset+16] = t.uv0[0]; triArray[offset+17] = t.uv0[1];
       triArray[offset+18] = t.uv1[0]; triArray[offset+19] = t.uv1[1];
       triArray[offset+20] = t.uv2[0]; triArray[offset+21] = t.uv2[1];
+      // pad4 at +22, +23
     }
-    triBuffer.unmap();
+    this.triBuffer.unmap();
 
-    const bvhBufferSize = bvhNodes.length * 32; // 32 bytes per BvhNode
+    const bvhBufferSize = Math.max(bvhNodes.length * 32, 32); // 32 bytes per BvhNode
     const bvhBuffer = this.device.createBuffer({
       size: Math.max(bvhBufferSize, 32),
       usage: GPUBufferUsage.STORAGE,
@@ -139,7 +147,7 @@ export class WebGpuRenderer {
       }
     });
 
-    this.createBindGroup(triBuffer, bvhBuffer, matBuffer);
+    this.createBindGroup(this.triBuffer, bvhBuffer, matBuffer);
 
     // Render pipeline for copying texture to screen
     const fullscreenWGSL = `
@@ -212,6 +220,93 @@ export class WebGpuRenderer {
     const v = (dot00 * dot12 - dot01 * dot02) * invDenom;
 
     return (u >= 0) && (v >= 0) && (u + v <= 1);
+  }
+
+  public paintSurface(intensity: number) {
+    // Determine ray direction
+    const dir = vec3.fromValues(
+      Math.cos(this.pitch) * Math.cos(this.yaw),
+      Math.sin(this.pitch),
+      Math.cos(this.pitch) * Math.sin(this.yaw)
+    );
+    vec3.normalize(dir, dir);
+
+    let hitT = Infinity;
+    let hitTriIdx = -1;
+
+    // Simple recursive or iterative traversal
+    const stack: number[] = [0]; // root
+    const invDir = vec3.fromValues(1 / dir[0], 1 / dir[1], 1 / dir[2]);
+
+    while (stack.length > 0) {
+      const nodeIdx = stack.pop()!;
+      const node = this.bvhNodes[nodeIdx];
+
+      // AABB intersect
+      let tmin = -Infinity;
+      let tmax = Infinity;
+      for (let i = 0; i < 3; i++) {
+        const t1 = (node.aabbMin[i] - this.pos[i]) * invDir[i];
+        const t2 = (node.aabbMax[i] - this.pos[i]) * invDir[i];
+        tmin = Math.max(tmin, Math.min(t1, t2));
+        tmax = Math.min(tmax, Math.max(t1, t2));
+      }
+
+      if (tmax < 0 || tmin > tmax || tmin > hitT) continue;
+
+      if (node.triCount > 0) {
+        // Leaf node
+        for (let i = 0; i < node.triCount; i++) {
+          const triIdx = node.leftFirst + i;
+          const tri = this.triangles[triIdx];
+          
+          // Triangle intersect (Möller-Trumbore)
+          const edge1 = vec3.subtract(vec3.create(), tri.v1, tri.v0);
+          const edge2 = vec3.subtract(vec3.create(), tri.v2, tri.v0);
+          const h = vec3.cross(vec3.create(), dir, edge2);
+          const a = vec3.dot(edge1, h);
+
+          if (a > -0.00001 && a < 0.00001) continue; // parallel
+
+          const f = 1.0 / a;
+          const s = vec3.subtract(vec3.create(), this.pos, tri.v0);
+          const u = f * vec3.dot(s, h);
+
+          if (u < 0.0 || u > 1.0) continue;
+
+          const q = vec3.cross(vec3.create(), s, edge1);
+          const v = f * vec3.dot(dir, q);
+
+          if (v < 0.0 || u + v > 1.0) continue;
+
+          const t = f * vec3.dot(edge2, q);
+          if (t > 0.001 && t < hitT) {
+            hitT = t;
+            hitTriIdx = triIdx;
+          }
+        }
+      } else {
+        stack.push(node.leftFirst + 1); // Right
+        stack.push(node.leftFirst);     // Left
+      }
+    }
+
+    if (hitTriIdx !== -1) {
+      console.log("Painted triangle", hitTriIdx, "with intensity", intensity);
+      this.triangles[hitTriIdx].emissivity = intensity;
+      
+      // Update GPU buffer
+      // Tri struct size = 96 bytes. Emissivity is at byte offset 28 (7th float)
+      const byteOffset = hitTriIdx * 96 + 28;
+      this.device.queue.writeBuffer(
+        this.triBuffer,
+        byteOffset,
+        new Float32Array([intensity])
+      );
+
+      // Reset accumulation buffer to instantly see the new light
+      this.frameCounter = 0;
+    }
   }
 
   public updateCamera(dx: number, dz: number, dyaw: number, dpitch: number) {

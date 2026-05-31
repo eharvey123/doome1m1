@@ -2,7 +2,7 @@ struct Triangle {
     v0: vec3<f32>,
     materialIndex: u32,
     v1: vec3<f32>,
-    pad1: u32,
+    emissivity: f32,
     v2: vec3<f32>,
     pad2: u32,
     normal: vec3<f32>,
@@ -246,6 +246,10 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
             let diffuse = max(dot(normal, lightDir), 0.1);
             
             let ambient = vec3<f32>(0.5); // Boost ambient for Doom since it's dark
+            
+            let emission = texColor * tri.emissivity;
+            color += throughput * emission;
+            
             throughput *= texColor * (diffuse * vec3(0.5) + ambient);
             
             ray.origin = hitPoint + normal * 0.001;

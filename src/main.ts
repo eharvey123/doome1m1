@@ -12,8 +12,22 @@ async function init() {
       <h1>WebGPU Doom Path Tracer</h1>
       <p id="status">Loading DOOM1.WAD...</p>
       <p>Click on the canvas to lock pointer. Use WASD to move.</p>
+      
+      <div id="paint-ui" style="display: none; background: rgba(0,0,0,0.8); padding: 10px; border-radius: 8px; margin-top: 10px; border: 1px solid #444;">
+        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+          <input type="checkbox" id="paintModeToggle">
+          <strong style="color: #ffaa00;">Enable Paint Mode</strong>
+        </label>
+        <div style="margin-top: 10px;">
+          <label>Emission Intensity: <span id="intensityVal">5.0</span></label><br>
+          <input type="range" id="intensitySlider" min="0" max="20" step="0.5" value="5" style="width: 100%;">
+        </div>
+      </div>
     </div>
-    <canvas id="glcanvas" width="800" height="600"></canvas>
+    <div style="position: relative; display: inline-block;">
+      <canvas id="glcanvas" width="800" height="600"></canvas>
+      <div id="crosshair" style="display: none; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); color: white; pointer-events: none; font-size: 24px; text-shadow: 0 0 2px black;">+</div>
+    </div>
   `;
 
   try {
@@ -48,6 +62,26 @@ async function init() {
     await renderer.init(orderedTriangles, nodes, mapData, materials, atlasBuilder);
 
     document.querySelector<HTMLParagraphElement>('#status')!.innerText = "Ready!";
+    
+    // Setup Paint UI
+    document.querySelector<HTMLElement>('#paint-ui')!.style.display = 'block';
+    const paintToggle = document.querySelector<HTMLInputElement>('#paintModeToggle')!;
+    const intensitySlider = document.querySelector<HTMLInputElement>('#intensitySlider')!;
+    const intensityVal = document.querySelector<HTMLElement>('#intensityVal')!;
+    const crosshair = document.querySelector<HTMLElement>('#crosshair')!;
+
+    paintToggle.addEventListener('change', () => {
+      crosshair.style.display = paintToggle.checked ? 'block' : 'none';
+    });
+    intensitySlider.addEventListener('input', () => {
+      intensityVal.innerText = intensitySlider.value;
+    });
+
+    window.addEventListener('mousedown', e => {
+      if (document.pointerLockElement === canvas && paintToggle.checked && e.button === 0) {
+        renderer.paintSurface(parseFloat(intensitySlider.value));
+      }
+    });
 
     // Input handling
     let keys: Record<string, boolean> = {};

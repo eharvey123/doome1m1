@@ -11,6 +11,7 @@ export interface Triangle {
   uv0: [number, number];
   uv1: [number, number];
   uv2: [number, number];
+  emissivity: number;
 }
 
 export interface MaterialDef {
@@ -76,8 +77,8 @@ export class GeometryBuilder {
 
     const normal: [number, number, number] = [nx, ny, nz];
 
-    this.triangles.push({ v0, v1, v2, normal, materialIndex, uv0, uv1, uv2 });
-    this.triangles.push({ v0, v1: v2, v2: v3, normal, materialIndex, uv0, uv1: uv2, uv2: uv3 });
+    this.triangles.push({ v0, v1, v2, normal, materialIndex, uv0, uv1, uv2, emissivity: 0.0 });
+    this.triangles.push({ v0, v1: v2, v2: v3, normal, materialIndex, uv0, uv1: uv2, uv2: uv3, emissivity: 0.0 });
   }
 
   private buildWalls() {
@@ -272,7 +273,8 @@ export class GeometryBuilder {
         this.triangles.push({ 
           v0: v2f, v1: v1f, v2: v0f, 
           normal: [0, 1, 0], materialIndex: floorMat,
-          uv0: [u2, v2], uv1: [u1, v1], uv2: [u0, v0]
+          uv0: [u2, v2], uv1: [u1, v1], uv2: [u0, v0],
+          emissivity: 0.0
         });
 
         const v0c: [number, number, number] = [vertices[i0], sector.ceilingheight, vertices[i0+1]];
@@ -283,7 +285,8 @@ export class GeometryBuilder {
           this.triangles.push({ 
             v0: v0c, v1: v1c, v2: v2c, 
             normal: [0, -1, 0], materialIndex: ceilMat,
-            uv0: [u0, v0], uv1: [u1, v1], uv2: [u2, v2]
+            uv0: [u0, v0], uv1: [u1, v1], uv2: [u2, v2],
+            emissivity: 0.0
           });
         }
       }
