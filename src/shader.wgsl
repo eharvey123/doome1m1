@@ -43,9 +43,9 @@ struct Camera {
     prevPos: vec3<f32>,
     aspect: f32,
     prevDir: vec3<f32>,
-    pad1: f32,
+    framesStill: u32,
     prevRight: vec3<f32>,
-    pad2: f32,
+    temporalBlend: f32,
     prevUp: vec3<f32>,
     pad3: f32,
 }
@@ -392,9 +392,9 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
         }
     }
     
-    var blendWeight = 0.02; // 2% new, 98% old when still for perfect crisp convergence
+    var blendWeight = 1.0 / f32(camera.framesStill + 1u); 
     if (isMoving) {
-        blendWeight = 0.2; // 20% new, 80% old when moving to reduce ghosting
+        blendWeight = camera.temporalBlend; 
     }
     if (camera.frameCounter == 0u || !validHistory) {
         blendWeight = 1.0;

@@ -30,6 +30,8 @@ export class WebGpuRenderer {
   private _ambientLight = 0.05;
   private _skyLight = 1.0;
   private _renderScale = 1.0;
+  private _temporalBlend = 0.2;
+  private framesStill = 0;
 
   private bvhBuffer!: GPUBuffer;
 
@@ -52,6 +54,9 @@ export class WebGpuRenderer {
     }
   }
   public get renderScale() { return this._renderScale; }
+
+  public set temporalBlend(val: number) { this._temporalBlend = val; }
+  public get temporalBlend() { return this._temporalBlend; }
 
   private get renderWidth() { return Math.max(1, Math.floor(this.canvas.width * this._renderScale)); }
   private get renderHeight() { return Math.max(1, Math.floor(this.canvas.height * this._renderScale)); }
@@ -434,6 +439,12 @@ export class WebGpuRenderer {
   private prevUp = vec3.create();
 
   public updateCamera(dx: number, dz: number, dyaw: number, dpitch: number) {
+    if (dx !== 0 || dz !== 0 || dyaw !== 0 || dpitch !== 0) {
+      this.framesStill = 0;
+    } else {
+      this.framesStill++;
+    }
+    
     this.yaw += dyaw;
     this.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this.pitch + dpitch));
 
@@ -530,12 +541,13 @@ export class WebGpuRenderer {
       
       this.prevPos[0], this.prevPos[1], this.prevPos[2], this.renderWidth / this.renderHeight,
       this.prevDir[0], this.prevDir[1], this.prevDir[2], 0,
-      this.prevRight[0], this.prevRight[1], this.prevRight[2], 0,
+      this.prevRight[0], this.prevRight[1], this.prevRight[2], this._temporalBlend,
       this.prevUp[0], this.prevUp[1], this.prevUp[2], 0,
     ]);
     const camUint = new Uint32Array(camData.buffer);
     camUint[3] = this.frameCounter;
     camUint[15] = this.lightIndices.length;
+    camUint[23] = this.framesStill;
 
     this.device.queue.writeBuffer(this.cameraBuffer, 0, camData);
     

@@ -38,6 +38,10 @@ async function init() {
           <label>Sky Light: <span id="skyVal">1.0</span></label><br>
           <input type="range" id="skySlider" min="0" max="5.0" step="0.1" value="1.0" style="width: 100%;">
         </div>
+        <div style="margin-top: 10px; border-top: 1px solid #444; padding-top: 10px;">
+          <label>Temporal Smear: <span id="smearVal">0.2</span></label><br>
+          <input type="range" id="smearSlider" min="0.01" max="1.0" step="0.01" value="0.2" style="width: 100%;">
+        </div>
       </div>
     </div>
     <div style="position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; overflow: hidden; z-index: 1; background: black;">
@@ -98,6 +102,9 @@ async function init() {
     const skyVal = document.querySelector<HTMLElement>('#skyVal')!;
     const crosshair = document.querySelector<HTMLElement>('#crosshair')!;
 
+    const smearSlider = document.querySelector<HTMLInputElement>('#smearSlider')!;
+    const smearVal = document.querySelector<HTMLElement>('#smearVal')!;
+
     paintToggle.addEventListener('change', () => {
       crosshair.style.display = paintToggle.checked ? 'block' : 'none';
     });
@@ -118,6 +125,10 @@ async function init() {
     skySlider.addEventListener('input', () => {
       skyVal.innerText = skySlider.value;
       renderer.skyLight = parseFloat(skySlider.value);
+    });
+    smearSlider.addEventListener('input', () => {
+      smearVal.innerText = smearSlider.value;
+      renderer.temporalBlend = parseFloat(smearSlider.value);
     });
 
     window.addEventListener('mousedown', e => {
