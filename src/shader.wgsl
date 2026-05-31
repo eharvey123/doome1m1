@@ -196,6 +196,61 @@ fn bvhIntersect(ray: Ray) -> HitRecord {
     return rec;
 }
 
+fn bvhIntersectShadow(ray: Ray, maxDist: f32) -> bool {
+    var stack: array<u32, 32>;
+    var stackPtr = 0u;
+    stack[stackPtr] = 0u;
+    stackPtr += 1u;
+    
+    while (stackPtr > 0u) {
+        stackPtr -= 1u;
+        let nodeIdx = stack[stackPtr];
+        let node = bvhNodes[nodeIdx];
+        
+        let nodeDist = intersectAABB(ray, node);
+        if (nodeDist > maxDist) {
+            continue;
+        }
+        
+        if (node.triCount > 0u) {
+            for (var i = 0u; i < node.triCount; i += 1u) {
+                let triHit = intersectTriangle(ray, node.leftFirst + i);
+                if (triHit.t > 0.001 && triHit.t < maxDist) {
+                    let tri = triangles[triHit.triIndex];
+                    let mat = materials[tri.materialIndex];
+                    
+                    if (mat.pad1 > 0.5) {
+                        return true;
+                    } else {
+                        let uv = (1.0 - triHit.u - triHit.v) * tri.uv0 + triHit.u * tri.uv1 + triHit.v * tri.uv2;
+                        let sampleU = mat.u + fract(uv.x / mat.width) * mat.w;
+                        let sampleV = mat.v + fract(uv.y / mat.height) * mat.h;
+                        let texColor = textureSampleLevel(atlasTex, atlasSamp, vec2<f32>(sampleU, sampleV), 0.0);
+                        if (texColor.a > 0.5) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        } else {
+            let leftChildIdx = node.leftFirst;
+            let rightChildIdx = leftChildIdx + 1u;
+            
+            let tLeft = intersectAABB(ray, bvhNodes[leftChildIdx]);
+            let tRight = intersectAABB(ray, bvhNodes[rightChildIdx]);
+            
+            if (tLeft < tRight) {
+                if (tRight < maxDist) { stack[stackPtr] = rightChildIdx; stackPtr += 1u; }
+                if (tLeft < maxDist) { stack[stackPtr] = leftChildIdx; stackPtr += 1u; }
+            } else {
+                if (tLeft < maxDist) { stack[stackPtr] = leftChildIdx; stackPtr += 1u; }
+                if (tRight < maxDist) { stack[stackPtr] = rightChildIdx; stackPtr += 1u; }
+            }
+        }
+    }
+    return false;
+}
+
 // PCG random number generator
 fn rand_pcg(seed: ptr<function, u32>) -> f32 {
     let state = *seed;
@@ -301,8 +356,7 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
                         shadowRay.dir = lightDir;
                         shadowRay.invDir = 1.0 / lightDir;
                         
-                        let shadowRec = bvhIntersect(shadowRay);
-                        if (shadowRec.t >= lightDist - 0.01) {
+                        if (!bvhIntersectShadow(shadowRay, lightDist - 0.01)) {
                             let edge1 = lightTri.v1 - lightTri.v0;
                             let edge2 = lightTri.v2 - lightTri.v0;
                             let lightArea = length(cross(edge1, edge2)) * 0.5;
@@ -336,8 +390,7 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
                 sunRay.origin = hitPoint;
                 sunRay.dir = camera.sunDir;
                 sunRay.invDir = 1.0 / camera.sunDir;
-                let sunRec = bvhIntersect(sunRay);
-                if (sunRec.t > 1e28) {
+                if (!bvhIntersectShadow(sunRay, 1e28)) {
                     let sunRadiance = vec3(1.0, 0.9, 0.8) * camera.skyLight * 5.0;
                     let phaseFunction = 1.0 / (4.0 * 3.14159);
                     var sunTransmittance = 1.0;
@@ -449,8 +502,7 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
                 sunRay.origin = hitPoint + normal * 0.001;
                 sunRay.dir = camera.sunDir;
                 sunRay.invDir = 1.0 / camera.sunDir;
-                let sunRec = bvhIntersect(sunRay);
-                if (sunRec.t > 1e28) {
+                if (!bvhIntersectShadow(sunRay, 1e28)) {
                     let sunRadiance = vec3(1.0, 0.9, 0.8) * camera.skyLight * 5.0;
                     var sunTransmittance = 1.0;
                     if (camera.volumetricsEnabled == 1u) {
