@@ -231,7 +231,8 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
     var seed = GlobalInvocationID.x + GlobalInvocationID.y * dimensions.x + camera.frameCounter * dimensions.x * dimensions.y;
     
     let jitter = vec2<f32>(rand_pcg(&seed) - 0.5, rand_pcg(&seed) - 0.5);
-    let uv = (vec2<f32>(pixelCoords) + jitter) / vec2<f32>(dimensions) * 2.0 - 1.0;
+    let pixelCenter = vec2<f32>(pixelCoords) + vec2<f32>(0.5, 0.5);
+    let uv = (pixelCenter + jitter) / vec2<f32>(dimensions) * 2.0 - 1.0;
     
     let aspect = f32(dimensions.x) / f32(dimensions.y);
     var ray: Ray;
@@ -360,33 +361,38 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
         }
     }
     
+    let isMoving = distance(camera.pos, camera.prevPos) > 0.001 || distance(camera.dir, camera.prevDir) > 0.001;
+    
     // Reprojection
     var historyColor = vec3<f32>(0.0);
     var validHistory = false;
     
-    // Calculate world-space position of the first hit (or far plane for sky)
-    var worldPos = ray.origin + ray.dir * 1000.0;
-    if (firstHitT < 1e29) {
-        worldPos = camera.pos + normalize(camera.dir + camera.right * uv.x * aspect - camera.up * uv.y) * firstHitT;
-    }
-    
-    // Project into previous frame
-    let wPrev = worldPos - camera.prevPos;
-    let tPrev = dot(wPrev, camera.prevDir);
-    if (tPrev > 0.1) {
-        let xPrev = dot(wPrev, camera.prevRight) / (camera.aspect * tPrev);
-        let yPrev = dot(wPrev, camera.prevUp) / tPrev;
+    if (!isMoving) {
+        historyColor = textureLoad(historyTexRead, pixelCoords, 0).rgb;
+        validHistory = true;
+    } else {
+        // Calculate world-space position of the first hit (or far plane for sky)
+        var worldPos = ray.origin + ray.dir * 1000.0;
+        if (firstHitT < 1e29) {
+            worldPos = camera.pos + normalize(camera.dir + camera.right * uv.x * aspect - camera.up * uv.y) * firstHitT;
+        }
         
-        if (xPrev >= -1.0 && xPrev <= 1.0 && yPrev >= -1.0 && yPrev <= 1.0) {
-            let prevUV = vec2<f32>(xPrev, -yPrev) * 0.5 + 0.5;
-            historyColor = textureSampleLevel(historyTexRead, historySamp, prevUV, 0.0).rgb;
-            validHistory = true;
+        // Project into previous frame
+        let wPrev = worldPos - camera.prevPos;
+        let tPrev = dot(wPrev, camera.prevDir);
+        if (tPrev > 0.1) {
+            let xPrev = dot(wPrev, camera.prevRight) / (camera.aspect * tPrev);
+            let yPrev = dot(wPrev, camera.prevUp) / tPrev;
+            
+            if (xPrev >= -1.0 && xPrev <= 1.0 && yPrev >= -1.0 && yPrev <= 1.0) {
+                let prevUV = vec2<f32>(xPrev, -yPrev) * 0.5 + 0.5;
+                historyColor = textureSampleLevel(historyTexRead, historySamp, prevUV, 0.0).rgb;
+                validHistory = true;
+            }
         }
     }
     
-    let isMoving = distance(camera.pos, camera.prevPos) > 0.001 || distance(camera.dir, camera.prevDir) > 0.001;
-    
-    var blendWeight = 0.05; // 5% new, 95% old when still
+    var blendWeight = 0.02; // 2% new, 98% old when still for perfect crisp convergence
     if (isMoving) {
         blendWeight = 0.2; // 20% new, 80% old when moving to reduce ghosting
     }
