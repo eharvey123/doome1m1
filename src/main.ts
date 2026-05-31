@@ -19,11 +19,11 @@ async function init() {
   try {
     const response = await fetch('/DOOM1.WAD');
     if (!response.ok) throw new Error("Failed to load WAD: " + response.statusText);
-    
+
     const arrayBuffer = await response.arrayBuffer();
     const wad = new WadParser(arrayBuffer);
-    
-    document.querySelector<HTMLParagraphElement>('#status')!.innerText = 
+
+    document.querySelector<HTMLParagraphElement>('#status')!.innerText =
       "Loaded WAD with " + wad.header.numlumps + " lumps. Parsing Map...";
 
     document.querySelector<HTMLParagraphElement>('#status')!.innerText = "Building Texture Atlas...";
@@ -34,8 +34,8 @@ async function init() {
     document.querySelector<HTMLParagraphElement>('#status')!.innerText = "Extracting Geometry...";
     const geoBuilder = new GeometryBuilder(mapData, atlasBuilder);
     const { triangles, materials } = geoBuilder.build();
-    
-    document.querySelector<HTMLParagraphElement>('#status')!.innerText = 
+
+    document.querySelector<HTMLParagraphElement>('#status')!.innerText =
       "Building BVH for " + triangles.length + " triangles...";
 
     const bvhBuilder = new BvhBuilder(triangles);
@@ -64,7 +64,7 @@ async function init() {
       }
     });
 
-    const speed = 10;
+    const speed = 3;
     const sensitivity = 0.002;
 
     function frame() {
@@ -75,15 +75,15 @@ async function init() {
       if (keys['KeyA']) dx -= speed;
       if (keys['KeyD']) dx += speed;
 
-      renderer.updateCamera(dx, dz, -mouseDeltaX * sensitivity, -mouseDeltaY * sensitivity);
-      
+      renderer.updateCamera(dx, dz, mouseDeltaX * sensitivity, -mouseDeltaY * sensitivity);
+
       mouseDeltaX = 0;
       mouseDeltaY = 0;
 
       renderer.render();
       requestAnimationFrame(frame);
     }
-    
+
     requestAnimationFrame(frame);
 
   } catch (err) {
