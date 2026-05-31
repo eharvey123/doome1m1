@@ -14,6 +14,9 @@ export class WebGpuRenderer {
   
   private cameraBuffer!: GPUBuffer;
   private accumBuffer!: GPUBuffer;
+  private matBuffer!: GPUBuffer;
+  private lightBuffer!: GPUBuffer;
+  private lightIndices: number[] = [];
   private outputTexture!: GPUTexture;
   private atlasTexture!: GPUTexture;
   
@@ -28,7 +31,6 @@ export class WebGpuRenderer {
   private _renderScale = 1.0;
 
   private bvhBuffer!: GPUBuffer;
-  private matBuffer!: GPUBuffer;
 
   public set ambientLight(val: number) {
     this._ambientLight = val;
@@ -154,6 +156,11 @@ export class WebGpuRenderer {
     }
     this.matBuffer.unmap();
 
+    this.lightBuffer = this.device.createBuffer({
+      size: Math.max(1024 * 4, 4), // Up to 1024 lights
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+
     this.atlasTexture = this.device.createTexture({
       size: [atlasBuilder.atlasWidth, atlasBuilder.atlasHeight],
       format: 'rgba8unorm',
@@ -255,8 +262,16 @@ export class WebGpuRenderer {
         { binding: 5, resource: { buffer: matBuffer } },
         { binding: 6, resource: this.atlasTexture.createView() },
         { binding: 7, resource: atlasSampler },
+        { binding: 8, resource: { buffer: this.lightBuffer } },
       ]
     });
+  }
+
+  private updateLightBuffer() {
+    if (this.lightIndices.length > 0) {
+      const data = new Uint32Array(this.lightIndices);
+      this.device.queue.writeBuffer(this.lightBuffer, 0, data);
+    }
   }
 
   private pointInTriangle(px: number, py: number, ax: number, ay: number, bx: number, by: number, cx: number, cy: number) {
@@ -360,6 +375,15 @@ export class WebGpuRenderer {
       }
       this.triangles[hitTriIdx].emissivity = intensity;
       this.triangles[hitTriIdx].emissionExp = exp;
+      
+      const idxInLights = this.lightIndices.indexOf(hitTriIdx);
+      if (intensity > 0 && idxInLights === -1) {
+        this.lightIndices.push(hitTriIdx);
+        this.updateLightBuffer();
+      } else if (intensity === 0 && idxInLights !== -1) {
+        this.lightIndices.splice(idxInLights, 1);
+        this.updateLightBuffer();
+      }
       
       // Update GPU buffer
       // Tri struct size = 96 bytes. Emissivity is at byte offset 28 (7th float)
@@ -484,10 +508,11 @@ export class WebGpuRenderer {
       this.pos[0], this.pos[1], this.pos[2], 0, // frameCounter will be set as Uint32
       dir[0], dir[1], dir[2], this._ambientLight,
       right[0], right[1], right[2], this._skyLight,
-      up[0], up[1], up[2], 0,
+      up[0], up[1], up[2], this.lightIndices.length,
     ]);
     const camUint = new Uint32Array(camData.buffer);
     camUint[3] = this.frameCounter;
+    camUint[15] = this.lightIndices.length;
 
     this.device.queue.writeBuffer(this.cameraBuffer, 0, camData);
   }

@@ -39,7 +39,7 @@ struct Camera {
     right: vec3<f32>,
     skyLight: f32,
     up: vec3<f32>,
-    pad3: u32,
+    numLights: u32,
 }
 
 @group(0) @binding(0) var<storage, read> triangles: array<Triangle>;
@@ -50,6 +50,7 @@ struct Camera {
 @group(0) @binding(5) var<storage, read> materials: array<Material>;
 @group(0) @binding(6) var atlasTex: texture_2d<f32>;
 @group(0) @binding(7) var atlasSamp: sampler;
+@group(0) @binding(8) var<storage, read> lightIndices: array<u32>;
 
 struct Ray {
     origin: vec3<f32>,
@@ -122,7 +123,7 @@ fn bvhIntersect(ray: Ray) -> HitRecord {
     var rec: HitRecord;
     rec.t = 1e30;
     
-    var stack: array<u32, 64>;
+    var stack: array<u32, 32>;
     var stackPtr: i32 = 0;
     stack[stackPtr] = 0u;
     stackPtr += 1;
@@ -232,7 +233,7 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
     var color = vec3<f32>(0.0);
     var throughput = vec3<f32>(1.0);
     
-    for (var bounce = 0; bounce < 3; bounce += 1) {
+    for (var bounce = 0; bounce < 2; bounce += 1) {
         let rec = bvhIntersect(ray);
         
         if (rec.t < 1e29) {
@@ -265,11 +266,80 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
             
             // Pure Lambertian diffuse reflection
             // Cosine term is implicitly handled by cosine-weighted hemisphere sampling
+            
+            // Next Event Estimation (Explicit Light Sampling)
+            if (camera.numLights > 0u) {
+                // Pick a random light
+                let lightIdxStr = min(u32(rand_pcg(&seed) * f32(camera.numLights)), camera.numLights - 1u);
+                let lightTriIdx = lightIndices[lightIdxStr];
+                let lightTri = triangles[lightTriIdx];
+                
+                // Pick a random point on the light triangle
+                let r1 = rand_pcg(&seed);
+                let r2 = rand_pcg(&seed);
+                let sqrt_r1 = sqrt(r1);
+                let u_light = 1.0 - sqrt_r1;
+                let v_light = r2 * sqrt_r1;
+                let w_light = 1.0 - u_light - v_light;
+                
+                let lightPoint = lightTri.v0 * u_light + lightTri.v1 * v_light + lightTri.v2 * w_light;
+                let lightDirUnnorm = lightPoint - hitPoint;
+                let lightDist = length(lightDirUnnorm);
+                let lightDir = lightDirUnnorm / lightDist;
+                
+                let cosLight = dot(lightTri.normal, -lightDir);
+                let cosSurface = dot(normal, lightDir);
+                
+                if (cosLight > 0.0 && cosSurface > 0.0) {
+                    // Trace shadow ray
+                    var shadowRay: Ray;
+                    shadowRay.origin = hitPoint + normal * 0.001;
+                    shadowRay.dir = lightDir;
+                    shadowRay.invDir = 1.0 / lightDir;
+                    
+                    let shadowRec = bvhIntersect(shadowRay);
+                    // If we didn't hit anything closer than the light (allow small epsilon)
+                    if (shadowRec.t >= lightDist - 0.01) {
+                        let edge1 = lightTri.v1 - lightTri.v0;
+                        let edge2 = lightTri.v2 - lightTri.v0;
+                        let lightArea = length(cross(edge1, edge2)) * 0.5;
+                        
+                        // Solid angle = area * cos(theta) / r^2
+                        let solidAngle = (lightArea * cosLight) / (lightDist * lightDist);
+                        
+                        var lightEmissionMultiplier = 1.0;
+                        if (lightTri.emissionExp > 0.0) {
+                            lightEmissionMultiplier = pow(cosLight, lightTri.emissionExp) * (lightTri.emissionExp + 1.0);
+                        }
+                        
+                        let lightMat = materials[lightTri.materialIndex];
+                        let lightUV = (1.0 - u_light - v_light) * lightTri.uv0 + u_light * lightTri.uv1 + v_light * lightTri.uv2;
+                        let lSampleU = lightMat.u + fract(lightUV.x / lightMat.width) * lightMat.w;
+                        let lSampleV = lightMat.v + fract(lightUV.y / lightMat.height) * lightMat.h;
+                        let lTexColor = textureSampleLevel(atlasTex, atlasSamp, vec2<f32>(lSampleU, lSampleV), 0.0).rgb;
+                        
+                        let lightRadiance = lTexColor * lightTri.emissivity * lightEmissionMultiplier;
+                        
+                        // Add NEE contribution. (throughput * texColor is our surface BRDF factor here)
+                        color += throughput * texColor * lightRadiance * (solidAngle / 3.14159) * f32(camera.numLights);
+                    }
+                }
+            }
+            
             throughput *= texColor;
             
             ray.origin = hitPoint + normal * 0.001;
             ray.dir = randomHemisphereDir(normal, &seed);
             ray.invDir = 1.0 / ray.dir;
+            
+            // Russian Roulette
+            let p = max(throughput.r, max(throughput.g, throughput.b));
+            if (bounce > 0) {
+                if (rand_pcg(&seed) > p) {
+                    break;
+                }
+                throughput /= p;
+            }
         } else {
             color += throughput * vec3(0.5, 0.7, 1.0) * camera.skyLight;
             break;
