@@ -1,0 +1,366 @@
+import shaderCode from './shader.wgsl?raw';
+import type { Triangle, MaterialDef } from './GeometryBuilder.ts';
+import type { BvhNode } from './BvhBuilder.ts';
+import { vec3 } from 'gl-matrix';
+import type { MapData } from './WadParser.ts';
+import type { TextureAtlasBuilder } from './TextureAtlasBuilder.ts';
+
+export class WebGpuRenderer {
+  private device!: GPUDevice;
+  private context!: GPUCanvasContext;
+  private computePipeline!: GPUComputePipeline;
+  private renderPipeline!: GPURenderPipeline;
+  private bindGroup!: GPUBindGroup;
+  
+  private cameraBuffer!: GPUBuffer;
+  private accumBuffer!: GPUBuffer;
+  private outputTexture!: GPUTexture;
+  private atlasTexture!: GPUTexture;
+  
+  private frameCounter = 0;
+  
+  // Camera state
+  private pos: vec3 = vec3.fromValues(1056, 150, -3600); // Start position (rough E1M1 spawn)
+  private yaw = Math.PI / 2;
+  private pitch = 0;
+
+  private canvas: HTMLCanvasElement;
+  private mapData!: MapData;
+  private floorTriangles: Triangle[] = [];
+
+  constructor(canvas: HTMLCanvasElement) {
+    this.canvas = canvas;
+  }
+
+  async init(triangles: Triangle[], bvhNodes: BvhNode[], mapData: MapData, materials: MaterialDef[], atlasBuilder: TextureAtlasBuilder) {
+    this.mapData = mapData;
+    this.floorTriangles = triangles.filter(t => t.normal[1] > 0.9);
+    if (!navigator.gpu) throw new Error("WebGPU not supported");
+    const adapter = await navigator.gpu.requestAdapter();
+    if (!adapter) throw new Error("No adapter found");
+    this.device = await adapter.requestDevice();
+
+    this.context = this.canvas.getContext('webgpu') as GPUCanvasContext;
+    const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
+    this.context.configure({
+      device: this.device,
+      format: presentationFormat,
+    });
+
+    // Create Buffers
+    const triBufferSize = triangles.length * 96; // 96 bytes per Triangle (24 floats)
+    const triBuffer = this.device.createBuffer({
+      size: triBufferSize,
+      usage: GPUBufferUsage.STORAGE,
+      mappedAtCreation: true,
+    });
+    const triMapped = triBuffer.getMappedRange();
+    const triArray = new Float32Array(triMapped);
+    const triUintArray = new Uint32Array(triMapped);
+    for (let i = 0; i < triangles.length; i++) {
+      const t = triangles[i];
+      let offset = i * 24; // 24 floats
+      triArray[offset+0] = t.v0[0]; triArray[offset+1] = t.v0[1]; triArray[offset+2] = t.v0[2];
+      triUintArray[offset+3] = t.materialIndex;
+      triArray[offset+4] = t.v1[0]; triArray[offset+5] = t.v1[1]; triArray[offset+6] = t.v1[2];
+      triArray[offset+8] = t.v2[0]; triArray[offset+9] = t.v2[1]; triArray[offset+10] = t.v2[2];
+      triArray[offset+12] = t.normal[0]; triArray[offset+13] = t.normal[1]; triArray[offset+14] = t.normal[2];
+      
+      triArray[offset+16] = t.uv0[0]; triArray[offset+17] = t.uv0[1];
+      triArray[offset+18] = t.uv1[0]; triArray[offset+19] = t.uv1[1];
+      triArray[offset+20] = t.uv2[0]; triArray[offset+21] = t.uv2[1];
+    }
+    triBuffer.unmap();
+
+    const bvhBufferSize = bvhNodes.length * 32; // 32 bytes per BvhNode
+    const bvhBuffer = this.device.createBuffer({
+      size: Math.max(bvhBufferSize, 32),
+      usage: GPUBufferUsage.STORAGE,
+      mappedAtCreation: true,
+    });
+    if (bvhNodes.length > 0) {
+      const bvhMapped = bvhBuffer.getMappedRange();
+      const bvhArray = new Float32Array(bvhMapped);
+      const bvhUintArray = new Uint32Array(bvhMapped);
+      for (let i = 0; i < bvhNodes.length; i++) {
+        const n = bvhNodes[i];
+        let offset = i * 8; // 8 floats
+        bvhArray[offset+0] = n.aabbMin[0]; bvhArray[offset+1] = n.aabbMin[1]; bvhArray[offset+2] = n.aabbMin[2];
+        bvhUintArray[offset+3] = n.leftFirst;
+        bvhArray[offset+4] = n.aabbMax[0]; bvhArray[offset+5] = n.aabbMax[1]; bvhArray[offset+6] = n.aabbMax[2];
+        bvhUintArray[offset+7] = n.triCount;
+      }
+    }
+    bvhBuffer.unmap();
+
+    this.cameraBuffer = this.device.createBuffer({
+      size: 64, // 4 vec4s
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    const matBuffer = this.device.createBuffer({
+      size: Math.max(materials.length * 32, 32),
+      usage: GPUBufferUsage.STORAGE,
+      mappedAtCreation: true,
+    });
+    if (materials.length > 0) {
+      const matArray = new Float32Array(matBuffer.getMappedRange());
+      for (let i = 0; i < materials.length; i++) {
+        const m = materials[i].atlas;
+        const off = i * 8;
+        matArray[off+0] = m.u; matArray[off+1] = m.v;
+        matArray[off+2] = m.w; matArray[off+3] = m.h;
+        matArray[off+4] = m.width; matArray[off+5] = m.height;
+      }
+    }
+    matBuffer.unmap();
+
+    this.atlasTexture = this.device.createTexture({
+      size: [atlasBuilder.atlasWidth, atlasBuilder.atlasHeight],
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+    });
+    this.device.queue.writeTexture(
+      { texture: this.atlasTexture },
+      atlasBuilder.atlasData,
+      { bytesPerRow: atlasBuilder.atlasWidth * 4, rowsPerImage: atlasBuilder.atlasHeight },
+      [atlasBuilder.atlasWidth, atlasBuilder.atlasHeight]
+    );
+
+    this.createTextures();
+
+    const shaderModule = this.device.createShaderModule({ code: shaderCode });
+
+    this.computePipeline = this.device.createComputePipeline({
+      layout: 'auto',
+      compute: {
+        module: shaderModule,
+        entryPoint: 'main',
+      }
+    });
+
+    this.createBindGroup(triBuffer, bvhBuffer, matBuffer);
+
+    // Render pipeline for copying texture to screen
+    const fullscreenWGSL = `
+      @vertex fn vs(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4<f32> {
+        var pos = array<vec2<f32>, 3>(vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
+        return vec4<f32>(pos[vi], 0.0, 1.0);
+      }
+      @group(0) @binding(0) var tex: texture_2d<f32>;
+      @group(0) @binding(1) var samp: sampler;
+      @fragment fn fs(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
+        return textureSample(tex, samp, pos.xy / vec2<f32>(textureDimensions(tex)));
+      }
+    `;
+    this.renderPipeline = this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: { module: this.device.createShaderModule({ code: fullscreenWGSL }), entryPoint: 'vs' },
+      fragment: {
+        module: this.device.createShaderModule({ code: fullscreenWGSL }),
+        entryPoint: 'fs',
+        targets: [{ format: presentationFormat }]
+      }
+    });
+  }
+
+  private createTextures() {
+    this.accumBuffer = this.device.createBuffer({
+      size: this.canvas.width * this.canvas.height * 16,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.outputTexture = this.device.createTexture({
+      size: [this.canvas.width, this.canvas.height],
+      format: 'rgba16float',
+      usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING
+    });
+  }
+
+  private createBindGroup(triBuffer: GPUBuffer, bvhBuffer: GPUBuffer, matBuffer: GPUBuffer) {
+    const atlasSampler = this.device.createSampler({ magFilter: 'nearest', minFilter: 'nearest', addressModeU: 'repeat', addressModeV: 'repeat' });
+    this.bindGroup = this.device.createBindGroup({
+      layout: this.computePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: triBuffer } },
+        { binding: 1, resource: { buffer: bvhBuffer } },
+        { binding: 2, resource: { buffer: this.cameraBuffer } },
+        { binding: 3, resource: this.outputTexture.createView() },
+        { binding: 4, resource: { buffer: this.accumBuffer } },
+        { binding: 5, resource: { buffer: matBuffer } },
+        { binding: 6, resource: this.atlasTexture.createView() },
+        { binding: 7, resource: atlasSampler },
+      ]
+    });
+  }
+
+  private pointInTriangle(px: number, py: number, ax: number, ay: number, bx: number, by: number, cx: number, cy: number) {
+    const v0x = cx - ax;
+    const v0y = cy - ay;
+    const v1x = bx - ax;
+    const v1y = by - ay;
+    const v2x = px - ax;
+    const v2y = py - ay;
+
+    const dot00 = v0x * v0x + v0y * v0y;
+    const dot01 = v0x * v1x + v0y * v1y;
+    const dot02 = v0x * v2x + v0y * v2y;
+    const dot11 = v1x * v1x + v1y * v1y;
+    const dot12 = v1x * v2x + v1y * v2y;
+
+    const invDenom = 1 / (dot00 * dot11 - dot01 * dot01);
+    const u = (dot11 * dot02 - dot01 * dot12) * invDenom;
+    const v = (dot00 * dot12 - dot01 * dot02) * invDenom;
+
+    return (u >= 0) && (v >= 0) && (u + v <= 1);
+  }
+
+  public updateCamera(dx: number, dz: number, dyaw: number, dpitch: number) {
+    if (dx !== 0 || dz !== 0 || dyaw !== 0 || dpitch !== 0) {
+      this.frameCounter = 0; // Reset accumulation
+    }
+    
+    this.yaw += dyaw;
+    this.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this.pitch + dpitch));
+
+    const dir = vec3.fromValues(
+      Math.cos(this.pitch) * Math.cos(this.yaw),
+      Math.sin(this.pitch),
+      Math.cos(this.pitch) * Math.sin(this.yaw)
+    );
+    const right = vec3.cross(vec3.create(), dir, vec3.fromValues(0, 1, 0));
+    vec3.normalize(right, right);
+    
+    const up = vec3.cross(vec3.create(), right, dir);
+
+    const move = vec3.create();
+    vec3.scaleAndAdd(move, move, dir, dz);
+    vec3.scaleAndAdd(move, move, right, dx);
+    move[1] = 0; // Flat movement initially
+    
+    let pX = this.pos[0] + move[0];
+    let pZ = this.pos[2] + move[2];
+    const radius = 16;
+    const playerZ = this.pos[1] - 41;
+
+    // Wall collision (3 passes for corners)
+    for (let pass = 0; pass < 3; pass++) {
+        for (const line of this.mapData.linedefs) {
+            const v1 = this.mapData.vertexes[line.v1];
+            const v2 = this.mapData.vertexes[line.v2];
+            
+            const ldx = v2.x - v1.x;
+            const ldy = v2.y - v1.y;
+            const lengthSq = ldx * ldx + ldy * ldy;
+            
+            let t = 0;
+            if (lengthSq > 0) {
+                t = ((pX - v1.x) * ldx + (pZ - v1.y) * ldy) / lengthSq;
+                t = Math.max(0, Math.min(1, t));
+            }
+            
+            const closestX = v1.x + t * ldx;
+            const closestZ = v1.y + t * ldy;
+            
+            const distSq = (pX - closestX) * (pX - closestX) + (pZ - closestZ) * (pZ - closestZ);
+            if (distSq < radius * radius && distSq > 0.0001) {
+                let solid = false;
+                if (line.sidenum[1] === -1) {
+                    solid = true;
+                } else {
+                    const frontSide = this.mapData.sidedefs[line.sidenum[0]];
+                    const backSide = this.mapData.sidedefs[line.sidenum[1]];
+                    const frontSec = this.mapData.sectors[frontSide.sector];
+                    const backSec = this.mapData.sectors[backSide.sector];
+                    
+                    const highestFloor = Math.max(frontSec.floorheight, backSec.floorheight);
+                    const lowestCeil = Math.min(frontSec.ceilingheight, backSec.ceilingheight);
+                    
+                    if (highestFloor > playerZ + 24) solid = true;
+                    if (lowestCeil - highestFloor < 56) solid = true;
+                }
+                
+                if (solid) {
+                    const dist = Math.sqrt(distSq);
+                    const pushDist = radius - dist + 0.01;
+                    const pushX = (pX - closestX) / dist;
+                    const pushZ = (pZ - closestZ) / dist;
+                    pX += pushX * pushDist;
+                    pZ += pushZ * pushDist;
+                }
+            }
+        }
+    }
+
+    // Find floor height
+    let targetFloor = playerZ;
+    for (const t of this.floorTriangles) {
+        if (this.pointInTriangle(pX, pZ, t.v0[0], t.v0[2], t.v1[0], t.v1[2], t.v2[0], t.v2[2])) {
+            targetFloor = t.v0[1];
+            break;
+        }
+    }
+
+    const targetY = targetFloor + 41;
+    
+    // Check if we moved or changed height
+    if (Math.abs(this.pos[0] - pX) > 0.001 || Math.abs(this.pos[2] - pZ) > 0.001 || Math.abs(this.pos[1] - targetY) > 0.001) {
+        this.frameCounter = 0;
+    }
+
+    this.pos[0] = pX;
+    this.pos[2] = pZ;
+    this.pos[1] += (targetY - this.pos[1]) * 0.2; // Smooth height transition
+
+    const camData = new Float32Array([
+      this.pos[0], this.pos[1], this.pos[2], 0, // frameCounter will be set as Uint32
+      dir[0], dir[1], dir[2], 0,
+      right[0], right[1], right[2], 0,
+      up[0], up[1], up[2], 0,
+    ]);
+    const camUint = new Uint32Array(camData.buffer);
+    camUint[3] = this.frameCounter;
+
+    this.device.queue.writeBuffer(this.cameraBuffer, 0, camData);
+  }
+
+  public render() {
+    this.updateCamera(0, 0, 0, 0); // Just to push frameCounter
+
+    const encoder = this.device.createCommandEncoder();
+    
+    const computePass = encoder.beginComputePass();
+    computePass.setPipeline(this.computePipeline);
+    computePass.setBindGroup(0, this.bindGroup);
+    computePass.dispatchWorkgroups(
+      Math.ceil(this.canvas.width / 8),
+      Math.ceil(this.canvas.height / 8)
+    );
+    computePass.end();
+
+    const renderPass = encoder.beginRenderPass({
+      colorAttachments: [{
+        view: this.context.getCurrentTexture().createView(),
+        loadOp: 'clear', clearValue: { r: 0, g: 0, b: 0, a: 1 },
+        storeOp: 'store'
+      }]
+    });
+    renderPass.setPipeline(this.renderPipeline);
+    
+    const sampler = this.device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
+    const screenBindGroup = this.device.createBindGroup({
+      layout: this.renderPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: this.outputTexture.createView() },
+        { binding: 1, resource: sampler },
+      ]
+    });
+    
+    renderPass.setBindGroup(0, screenBindGroup);
+    renderPass.draw(3);
+    renderPass.end();
+
+    this.device.queue.submit([encoder.finish()]);
+    
+    this.frameCounter++;
+  }
+}
