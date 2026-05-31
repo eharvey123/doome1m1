@@ -10,14 +10,15 @@ export class WebGpuRenderer {
   private context!: GPUCanvasContext;
   private computePipeline!: GPUComputePipeline;
   private renderPipeline!: GPURenderPipeline;
-  private bindGroup!: GPUBindGroup;
+  private bindGroup0!: GPUBindGroup;
+  private bindGroup1!: GPUBindGroup;
   
   private cameraBuffer!: GPUBuffer;
-  private accumBuffer!: GPUBuffer;
   private matBuffer!: GPUBuffer;
   private lightBuffer!: GPUBuffer;
   private lightIndices: number[] = [];
-  private outputTexture!: GPUTexture;
+  private historyTex0!: GPUTexture;
+  private historyTex1!: GPUTexture;
   private atlasTexture!: GPUTexture;
   
   private frameCounter = 0;
@@ -134,7 +135,7 @@ export class WebGpuRenderer {
     this.bvhBuffer.unmap();
 
     this.cameraBuffer = this.device.createBuffer({
-      size: 16 * 4, // 16 floats
+      size: 32 * 4, // 32 floats (128 bytes)
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -232,11 +233,12 @@ export class WebGpuRenderer {
   }
 
   private createTextures() {
-    this.accumBuffer = this.device.createBuffer({
-      size: this.renderWidth * this.renderHeight * 16,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    this.historyTex0 = this.device.createTexture({
+      size: [this.renderWidth, this.renderHeight],
+      format: 'rgba16float',
+      usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING
     });
-    this.outputTexture = this.device.createTexture({
+    this.historyTex1 = this.device.createTexture({
       size: [this.renderWidth, this.renderHeight],
       format: 'rgba16float',
       usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING
@@ -251,18 +253,37 @@ export class WebGpuRenderer {
 
   private createBindGroup(triBuffer: GPUBuffer, bvhBuffer: GPUBuffer, matBuffer: GPUBuffer) {
     const atlasSampler = this.device.createSampler({ magFilter: 'nearest', minFilter: 'nearest', addressModeU: 'repeat', addressModeV: 'repeat' });
-    this.bindGroup = this.device.createBindGroup({
+    const historySampler = this.device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
+    
+    this.bindGroup0 = this.device.createBindGroup({
       layout: this.computePipeline.getBindGroupLayout(0),
       entries: [
         { binding: 0, resource: { buffer: triBuffer } },
         { binding: 1, resource: { buffer: bvhBuffer } },
         { binding: 2, resource: { buffer: this.cameraBuffer } },
-        { binding: 3, resource: this.outputTexture.createView() },
-        { binding: 4, resource: { buffer: this.accumBuffer } },
+        { binding: 3, resource: this.historyTex1.createView() }, // Write to 1
+        { binding: 4, resource: this.historyTex0.createView() }, // Read from 0
         { binding: 5, resource: { buffer: matBuffer } },
         { binding: 6, resource: this.atlasTexture.createView() },
         { binding: 7, resource: atlasSampler },
         { binding: 8, resource: { buffer: this.lightBuffer } },
+        { binding: 9, resource: historySampler },
+      ]
+    });
+
+    this.bindGroup1 = this.device.createBindGroup({
+      layout: this.computePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: triBuffer } },
+        { binding: 1, resource: { buffer: bvhBuffer } },
+        { binding: 2, resource: { buffer: this.cameraBuffer } },
+        { binding: 3, resource: this.historyTex0.createView() }, // Write to 0
+        { binding: 4, resource: this.historyTex1.createView() }, // Read from 1
+        { binding: 5, resource: { buffer: matBuffer } },
+        { binding: 6, resource: this.atlasTexture.createView() },
+        { binding: 7, resource: atlasSampler },
+        { binding: 8, resource: { buffer: this.lightBuffer } },
+        { binding: 9, resource: historySampler },
       ]
     });
   }
@@ -407,11 +428,12 @@ export class WebGpuRenderer {
     }
   }
 
+  private prevPos = vec3.create();
+  private prevDir = vec3.create();
+  private prevRight = vec3.create();
+  private prevUp = vec3.create();
+
   public updateCamera(dx: number, dz: number, dyaw: number, dpitch: number) {
-    if (dx !== 0 || dz !== 0 || dyaw !== 0 || dpitch !== 0) {
-      this.frameCounter = 0; // Reset accumulation
-    }
-    
     this.yaw += dyaw;
     this.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this.pitch + dpitch));
 
@@ -495,26 +517,33 @@ export class WebGpuRenderer {
 
     const targetY = targetFloor + 41;
     
-    // Check if we moved or changed height
-    if (Math.abs(this.pos[0] - pX) > 0.001 || Math.abs(this.pos[2] - pZ) > 0.001 || Math.abs(this.pos[1] - targetY) > 0.001) {
-        this.frameCounter = 0;
-    }
-
+    // Smooth height transition
     this.pos[0] = pX;
     this.pos[2] = pZ;
-    this.pos[1] += (targetY - this.pos[1]) * 0.2; // Smooth height transition
+    this.pos[1] += (targetY - this.pos[1]) * 0.2; 
 
     const camData = new Float32Array([
-      this.pos[0], this.pos[1], this.pos[2], 0, // frameCounter will be set as Uint32
+      this.pos[0], this.pos[1], this.pos[2], 0,
       dir[0], dir[1], dir[2], this._ambientLight,
       right[0], right[1], right[2], this._skyLight,
       up[0], up[1], up[2], this.lightIndices.length,
+      
+      this.prevPos[0], this.prevPos[1], this.prevPos[2], this.renderWidth / this.renderHeight,
+      this.prevDir[0], this.prevDir[1], this.prevDir[2], 0,
+      this.prevRight[0], this.prevRight[1], this.prevRight[2], 0,
+      this.prevUp[0], this.prevUp[1], this.prevUp[2], 0,
     ]);
     const camUint = new Uint32Array(camData.buffer);
     camUint[3] = this.frameCounter;
     camUint[15] = this.lightIndices.length;
 
     this.device.queue.writeBuffer(this.cameraBuffer, 0, camData);
+    
+    // Save previous camera state
+    vec3.copy(this.prevPos, this.pos);
+    vec3.copy(this.prevDir, dir);
+    vec3.copy(this.prevRight, right);
+    vec3.copy(this.prevUp, up);
   }
 
   public render() {
@@ -524,7 +553,7 @@ export class WebGpuRenderer {
     
     const computePass = encoder.beginComputePass();
     computePass.setPipeline(this.computePipeline);
-    computePass.setBindGroup(0, this.bindGroup);
+    computePass.setBindGroup(0, this.frameCounter % 2 === 0 ? this.bindGroup0 : this.bindGroup1);
     computePass.dispatchWorkgroups(
       Math.ceil(this.renderWidth / 16),
       Math.ceil(this.renderHeight / 16)
@@ -544,7 +573,7 @@ export class WebGpuRenderer {
     const screenBindGroup = this.device.createBindGroup({
       layout: this.renderPipeline.getBindGroupLayout(0),
       entries: [
-        { binding: 0, resource: this.outputTexture.createView() },
+        { binding: 0, resource: this.frameCounter % 2 === 0 ? this.historyTex1.createView() : this.historyTex0.createView() },
         { binding: 1, resource: sampler },
       ]
     });

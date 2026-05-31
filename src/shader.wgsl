@@ -40,17 +40,26 @@ struct Camera {
     skyLight: f32,
     up: vec3<f32>,
     numLights: u32,
+    prevPos: vec3<f32>,
+    aspect: f32,
+    prevDir: vec3<f32>,
+    pad1: f32,
+    prevRight: vec3<f32>,
+    pad2: f32,
+    prevUp: vec3<f32>,
+    pad3: f32,
 }
 
 @group(0) @binding(0) var<storage, read> triangles: array<Triangle>;
 @group(0) @binding(1) var<storage, read> bvhNodes: array<BvhNode>;
 @group(0) @binding(2) var<uniform> camera: Camera;
-@group(0) @binding(3) var fb: texture_storage_2d<rgba16float, write>;
-@group(0) @binding(4) var<storage, read_write> accumBuffer: array<vec4<f32>>;
+@group(0) @binding(3) var historyTexWrite: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(4) var historyTexRead: texture_2d<f32>;
 @group(0) @binding(5) var<storage, read> materials: array<Material>;
 @group(0) @binding(6) var atlasTex: texture_2d<f32>;
 @group(0) @binding(7) var atlasSamp: sampler;
 @group(0) @binding(8) var<storage, read> lightIndices: array<u32>;
+@group(0) @binding(9) var historySamp: sampler;
 
 struct Ray {
     origin: vec3<f32>,
@@ -213,7 +222,7 @@ fn randomHemisphereDir(normal: vec3<f32>, seed: ptr<function, u32>) -> vec3<f32>
 
 @compute @workgroup_size(16, 16)
 fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
-    let dimensions = textureDimensions(fb);
+    let dimensions = textureDimensions(historyTexWrite);
     if (GlobalInvocationID.x >= dimensions.x || GlobalInvocationID.y >= dimensions.y) {
         return;
     }
@@ -232,9 +241,14 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
     
     var color = vec3<f32>(0.0);
     var throughput = vec3<f32>(1.0);
+    var firstHitT = 1e30;
     
     for (var bounce = 0; bounce < 2; bounce += 1) {
         let rec = bvhIntersect(ray);
+        
+        if (bounce == 0) {
+            firstHitT = rec.t;
+        }
         
         if (rec.t < 1e29) {
             let hitPoint = ray.origin + ray.dir * rec.t;
@@ -335,7 +349,7 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
             // Russian Roulette
             let p = max(throughput.r, max(throughput.g, throughput.b));
             if (bounce > 0) {
-                if (rand_pcg(&seed) > p) {
+                if (p < 0.001 || rand_pcg(&seed) > p) {
                     break;
                 }
                 throughput /= p;
@@ -346,16 +360,44 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
         }
     }
     
-    let pixelIndex = u32(pixelCoords.y) * dimensions.x + u32(pixelCoords.x);
-    var accumColor = color;
-    if (camera.frameCounter > 0u) {
-        let oldColor = accumBuffer[pixelIndex].rgb;
-        accumColor = oldColor + color;
+    // Reprojection
+    var historyColor = vec3<f32>(0.0);
+    var validHistory = false;
+    
+    // Calculate world-space position of the first hit (or far plane for sky)
+    var worldPos = ray.origin + ray.dir * 1000.0;
+    if (firstHitT < 1e29) {
+        worldPos = camera.pos + normalize(camera.dir + camera.right * uv.x * aspect - camera.up * uv.y) * firstHitT;
     }
-    accumBuffer[pixelIndex] = vec4<f32>(accumColor, 1.0);
     
-    let finalColor = accumColor / f32(camera.frameCounter + 1u);
-    let outColor = pow(finalColor, vec3<f32>(1.0 / 2.2));
+    // Project into previous frame
+    let wPrev = worldPos - camera.prevPos;
+    let tPrev = dot(wPrev, camera.prevDir);
+    if (tPrev > 0.1) {
+        let xPrev = dot(wPrev, camera.prevRight) / (camera.aspect * tPrev);
+        let yPrev = dot(wPrev, camera.prevUp) / tPrev;
+        
+        if (xPrev >= -1.0 && xPrev <= 1.0 && yPrev >= -1.0 && yPrev <= 1.0) {
+            let prevUV = vec2<f32>(xPrev, -yPrev) * 0.5 + 0.5;
+            historyColor = textureSampleLevel(historyTexRead, historySamp, prevUV, 0.0).rgb;
+            validHistory = true;
+        }
+    }
     
-    textureStore(fb, pixelCoords, vec4<f32>(outColor, 1.0));
+    let isMoving = distance(camera.pos, camera.prevPos) > 0.001 || distance(camera.dir, camera.prevDir) > 0.001;
+    
+    var blendWeight = 0.05; // 5% new, 95% old when still
+    if (isMoving) {
+        blendWeight = 0.2; // 20% new, 80% old when moving to reduce ghosting
+    }
+    if (camera.frameCounter == 0u || !validHistory) {
+        blendWeight = 1.0;
+    }
+    
+    var accumColor = mix(historyColor, color, blendWeight);
+    
+    // Prevent NaNs
+    if (any(accumColor != accumColor)) { accumColor = vec3(0.0); }
+    
+    textureStore(historyTexWrite, pixelCoords, vec4<f32>(accumColor, 1.0));
 }

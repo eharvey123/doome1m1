@@ -78,31 +78,105 @@ export class BvhBuilder {
     }
   }
 
+  private calculateSurfaceArea(min: [number, number, number], max: [number, number, number]): number {
+    const ex = Math.max(0, max[0] - min[0]);
+    const ey = Math.max(0, max[1] - min[1]);
+    const ez = Math.max(0, max[2] - min[2]);
+    return 2 * (ex * ey + ey * ez + ez * ex);
+  }
+
   private subdivide(nodeIdx: number) {
     const node = this.nodes[nodeIdx];
     if (node.triCount <= 2) return; // Leaf node threshold
 
-    // Find longest axis of the bounding box
-    const extent = [
-      node.aabbMax[0] - node.aabbMin[0],
-      node.aabbMax[1] - node.aabbMin[1],
-      node.aabbMax[2] - node.aabbMin[2]
-    ];
-    
-    let axis = 0;
-    if (extent[1] > extent[0]) axis = 1;
-    if (extent[2] > extent[axis]) axis = 2;
+    let bestAxis = -1;
+    let bestSplitPos = 0;
+    let bestCost = 1e30;
 
-    // Split at the median of centroids
-    const splitPos = node.aabbMin[axis] + extent[axis] * 0.5;
+    const BINS = 8;
+    for (let axis = 0; axis < 3; axis++) {
+      let boundsMin = Infinity;
+      let boundsMax = -Infinity;
+      for (let i = 0; i < node.triCount; i++) {
+        const centroid = this.centroids[this.triIndices[node.leftFirst + i]][axis];
+        boundsMin = Math.min(boundsMin, centroid);
+        boundsMax = Math.max(boundsMax, centroid);
+      }
+      
+      if (boundsMin === boundsMax) continue;
 
+      const scale = BINS / (boundsMax - boundsMin);
+      
+      const binCounts = new Array(BINS).fill(0);
+      const binBoundsMin = Array.from({length: BINS}, () => [Infinity, Infinity, Infinity]);
+      const binBoundsMax = Array.from({length: BINS}, () => [-Infinity, -Infinity, -Infinity]);
+
+      for (let i = 0; i < node.triCount; i++) {
+        const triIdx = this.triIndices[node.leftFirst + i];
+        const centroid = this.centroids[triIdx][axis];
+        let binIdx = Math.floor((centroid - boundsMin) * scale);
+        binIdx = Math.min(BINS - 1, Math.max(0, binIdx));
+        
+        binCounts[binIdx]++;
+        const tri = this.triangles[triIdx];
+        
+        for (let j = 0; j < 3; j++) {
+            binBoundsMin[binIdx][j] = Math.min(binBoundsMin[binIdx][j], tri.v0[j], tri.v1[j], tri.v2[j]);
+            binBoundsMax[binIdx][j] = Math.max(binBoundsMax[binIdx][j], tri.v0[j], tri.v1[j], tri.v2[j]);
+        }
+      }
+
+      const leftArea = new Array(BINS - 1);
+      const leftCount = new Array(BINS - 1);
+      let leftBoxMin = [Infinity, Infinity, Infinity];
+      let leftBoxMax = [-Infinity, -Infinity, -Infinity];
+      let leftSum = 0;
+
+      for (let i = 0; i < BINS - 1; i++) {
+        leftSum += binCounts[i];
+        leftCount[i] = leftSum;
+        for (let j = 0; j < 3; j++) {
+            leftBoxMin[j] = Math.min(leftBoxMin[j], binBoundsMin[i][j]);
+            leftBoxMax[j] = Math.max(leftBoxMax[j], binBoundsMax[i][j]);
+        }
+        leftArea[i] = this.calculateSurfaceArea(leftBoxMin as [number,number,number], leftBoxMax as [number,number,number]);
+      }
+
+      let rightBoxMin = [Infinity, Infinity, Infinity];
+      let rightBoxMax = [-Infinity, -Infinity, -Infinity];
+      let rightSum = 0;
+
+      for (let i = BINS - 2; i >= 0; i--) {
+        rightSum += binCounts[i + 1];
+        for (let j = 0; j < 3; j++) {
+            rightBoxMin[j] = Math.min(rightBoxMin[j], binBoundsMin[i + 1][j]);
+            rightBoxMax[j] = Math.max(rightBoxMax[j], binBoundsMax[i + 1][j]);
+        }
+        const rightArea = this.calculateSurfaceArea(rightBoxMin as [number,number,number], rightBoxMax as [number,number,number]);
+        
+        const cost = leftCount[i] * leftArea[i] + rightSum * rightArea;
+        if (cost < bestCost) {
+            bestCost = cost;
+            bestAxis = axis;
+            bestSplitPos = boundsMin + (i + 1) / scale;
+        }
+      }
+    }
+
+    const currentArea = this.calculateSurfaceArea(node.aabbMin, node.aabbMax);
+    const currentCost = node.triCount * currentArea;
+
+    if (bestCost >= currentCost || bestAxis === -1) {
+        return; // SAH says splitting makes it worse!
+    }
+
+    // Now partition based on bestAxis and bestSplitPos
     let i = node.leftFirst;
     let j = i + node.triCount - 1;
     while (i <= j) {
-      if (this.centroids[this.triIndices[i]][axis] < splitPos) {
+      if (this.centroids[this.triIndices[i]][bestAxis] < bestSplitPos) {
         i++;
       } else {
-        // Swap i and j
         const temp = this.triIndices[i];
         this.triIndices[i] = this.triIndices[j];
         this.triIndices[j] = temp;
@@ -111,7 +185,7 @@ export class BvhBuilder {
     }
 
     const leftCount = i - node.leftFirst;
-    if (leftCount === 0 || leftCount === node.triCount) return; // Cannot split
+    if (leftCount === 0 || leftCount === node.triCount) return; // Fallback if splitting fails
 
     const leftChildIdx = this.nodesUsed++;
     const rightChildIdx = this.nodesUsed++;
