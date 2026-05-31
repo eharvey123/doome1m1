@@ -23,6 +23,20 @@ export class WebGpuRenderer {
   private pos: vec3 = vec3.fromValues(1056, 150, -3600); // Start position (rough E1M1 spawn)
   private yaw = Math.PI / 2;
   private pitch = 0;
+  private _ambientLight = 0.05;
+  private _skyLight = 1.0;
+
+  public set ambientLight(val: number) {
+    this._ambientLight = val;
+    this.frameCounter = 0;
+  }
+  public get ambientLight() { return this._ambientLight; }
+
+  public set skyLight(val: number) {
+    this._skyLight = val;
+    this.frameCounter = 0;
+  }
+  public get skyLight() { return this._skyLight; }
 
   private canvas: HTMLCanvasElement;
   private mapData!: MapData;
@@ -71,6 +85,7 @@ export class WebGpuRenderer {
       triArray[offset+4] = t.v1[0]; triArray[offset+5] = t.v1[1]; triArray[offset+6] = t.v1[2];
       triArray[offset+7] = t.emissivity;
       triArray[offset+8] = t.v2[0]; triArray[offset+9] = t.v2[1]; triArray[offset+10] = t.v2[2];
+      triArray[offset+11] = t.emissionExp;
       triArray[offset+12] = t.normal[0]; triArray[offset+13] = t.normal[1]; triArray[offset+14] = t.normal[2];
       
       triArray[offset+16] = t.uv0[0]; triArray[offset+17] = t.uv0[1];
@@ -158,7 +173,20 @@ export class WebGpuRenderer {
       @group(0) @binding(0) var tex: texture_2d<f32>;
       @group(0) @binding(1) var samp: sampler;
       @fragment fn fs(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
-        return textureSample(tex, samp, pos.xy / vec2<f32>(textureDimensions(tex)));
+        var c = textureSample(tex, samp, pos.xy / vec2<f32>(textureDimensions(tex))).rgb;
+        
+        // ACES filmic tonemapping curve
+        let a = 2.51;
+        let b = 0.03;
+        let cc = 2.43;
+        let d = 0.59;
+        let e = 0.14;
+        c = clamp((c * (a * c + b)) / (c * (cc * c + d) + e), vec3<f32>(0.0), vec3<f32>(1.0));
+        
+        // Gamma correction
+        c = pow(c, vec3<f32>(1.0/2.2));
+        
+        return vec4<f32>(c, 1.0);
       }
     `;
     this.renderPipeline = this.device.createRenderPipeline({
@@ -222,7 +250,7 @@ export class WebGpuRenderer {
     return (u >= 0) && (v >= 0) && (u + v <= 1);
   }
 
-  public paintSurface(intensity: number) {
+  public paintSurface(intensity: number, fwhm: number) {
     // Determine ray direction
     const dir = vec3.fromValues(
       Math.cos(this.pitch) * Math.cos(this.yaw),
@@ -292,8 +320,16 @@ export class WebGpuRenderer {
     }
 
     if (hitTriIdx !== -1) {
-      console.log("Painted triangle", hitTriIdx, "with intensity", intensity);
+      console.log("Painted triangle", hitTriIdx, "with intensity", intensity, "and fwhm", fwhm);
+      let exp = 0.0;
+      if (fwhm < 180) {
+        const cosHalf = Math.cos(fwhm * 0.5 * Math.PI / 180.0);
+        if (cosHalf > 0) {
+          exp = Math.log(0.5) / Math.log(cosHalf);
+        }
+      }
       this.triangles[hitTriIdx].emissivity = intensity;
+      this.triangles[hitTriIdx].emissionExp = exp;
       
       // Update GPU buffer
       // Tri struct size = 96 bytes. Emissivity is at byte offset 28 (7th float)
@@ -302,6 +338,14 @@ export class WebGpuRenderer {
         this.triBuffer,
         byteOffset,
         new Float32Array([intensity])
+      );
+
+      // emissionExp is at byte offset 44 (11th float)
+      const expOffset = hitTriIdx * 96 + 44;
+      this.device.queue.writeBuffer(
+        this.triBuffer,
+        expOffset,
+        new Float32Array([exp])
       );
 
       // Reset accumulation buffer to instantly see the new light
@@ -408,8 +452,8 @@ export class WebGpuRenderer {
 
     const camData = new Float32Array([
       this.pos[0], this.pos[1], this.pos[2], 0, // frameCounter will be set as Uint32
-      dir[0], dir[1], dir[2], 0,
-      right[0], right[1], right[2], 0,
+      dir[0], dir[1], dir[2], this._ambientLight,
+      right[0], right[1], right[2], this._skyLight,
       up[0], up[1], up[2], 0,
     ]);
     const camUint = new Uint32Array(camData.buffer);

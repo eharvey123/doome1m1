@@ -4,7 +4,7 @@ struct Triangle {
     v1: vec3<f32>,
     emissivity: f32,
     v2: vec3<f32>,
-    pad2: u32,
+    emissionExp: f32,
     normal: vec3<f32>,
     pad3: u32,
     uv0: vec2<f32>,
@@ -35,9 +35,9 @@ struct Camera {
     pos: vec3<f32>,
     frameCounter: u32,
     dir: vec3<f32>,
-    pad1: u32,
+    ambientLight: f32,
     right: vec3<f32>,
-    pad2: u32,
+    skyLight: f32,
     up: vec3<f32>,
     pad3: u32,
 }
@@ -196,7 +196,8 @@ fn randomHemisphereDir(normal: vec3<f32>, seed: ptr<function, u32>) -> vec3<f32>
     let z = sqrt(max(0.0, 1.0 - r2));
     
     let w = normal;
-    let a = select(vec3(0.0, 1.0, 0.0), vec3(1.0, 0.0, 0.0), abs(w.x) > 0.9);
+    // If w is mostly pointing along X, use Y axis as arbitrary up, else use X axis
+    let a = select(vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), abs(w.x) > 0.9);
     let u = normalize(cross(a, w));
     let v = cross(w, u);
     
@@ -230,7 +231,11 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
         
         if (rec.t < 1e29) {
             let hitPoint = ray.origin + ray.dir * rec.t;
-            let normal = normalize(rec.normal);
+            var normal = normalize(rec.normal);
+            // If hitting a backface, flip the normal so we bounce out instead of getting stuck
+            if (dot(normal, ray.dir) > 0.0) {
+                normal = -normal;
+            }
             
             let tri = triangles[rec.triIndex];
             let mat = materials[tri.materialIndex];
@@ -242,21 +247,25 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
             
             let texColor = textureSampleLevel(atlasTex, atlasSamp, vec2<f32>(sampleU, sampleV), 0.0).rgb;
             
-            let lightDir = normalize(vec3<f32>(0.5, 1.0, 0.3));
-            let diffuse = max(dot(normal, lightDir), 0.1);
+            var emissionMultiplier = 1.0;
+            if (tri.emissionExp > 0.0) {
+                let cosTheta = max(0.0001, dot(normal, -ray.dir));
+                emissionMultiplier = pow(cosTheta, tri.emissionExp) * (tri.emissionExp + 1.0);
+            }
             
-            let ambient = vec3<f32>(0.5); // Boost ambient for Doom since it's dark
+            let emission = texColor * tri.emissivity * emissionMultiplier;
+            let ambient = texColor * camera.ambientLight;
+            color += throughput * (emission + ambient);
             
-            let emission = texColor * tri.emissivity;
-            color += throughput * emission;
-            
-            throughput *= texColor * (diffuse * vec3(0.5) + ambient);
+            // Pure Lambertian diffuse reflection
+            // Cosine term is implicitly handled by cosine-weighted hemisphere sampling
+            throughput *= texColor;
             
             ray.origin = hitPoint + normal * 0.001;
             ray.dir = randomHemisphereDir(normal, &seed);
             ray.invDir = 1.0 / ray.dir;
         } else {
-            color += throughput * vec3(0.5, 0.7, 1.0);
+            color += throughput * vec3(0.5, 0.7, 1.0) * camera.skyLight;
             break;
         }
     }

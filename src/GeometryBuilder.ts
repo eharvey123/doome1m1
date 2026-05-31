@@ -12,6 +12,7 @@ export interface Triangle {
   uv1: [number, number];
   uv2: [number, number];
   emissivity: number;
+  emissionExp: number;
 }
 
 export interface MaterialDef {
@@ -66,9 +67,9 @@ export class GeometryBuilder {
     const by = v2[1] - v0[1];
     const bz = v2[2] - v0[2];
 
-    let nx = ay * bz - az * by;
-    let ny = az * bx - ax * bz;
-    let nz = ax * by - ay * bx;
+    let nx = -(ay * bz - az * by);
+    let ny = -(az * bx - ax * bz);
+    let nz = -(ax * by - ay * bx);
 
     const len = Math.hypot(nx, ny, nz);
     if (len > 0) {
@@ -77,8 +78,8 @@ export class GeometryBuilder {
 
     const normal: [number, number, number] = [nx, ny, nz];
 
-    this.triangles.push({ v0, v1, v2, normal, materialIndex, uv0, uv1, uv2, emissivity: 0.0 });
-    this.triangles.push({ v0, v1: v2, v2: v3, normal, materialIndex, uv0, uv1: uv2, uv2: uv3, emissivity: 0.0 });
+    this.triangles.push({ v0, v1, v2, normal, materialIndex, uv0, uv1, uv2, emissivity: 0.0, emissionExp: 0.0 });
+    this.triangles.push({ v0, v1: v2, v2: v3, normal, materialIndex, uv0, uv1: uv2, uv2: uv3, emissivity: 0.0, emissionExp: 0.0 });
   }
 
   private buildWalls() {
@@ -274,7 +275,7 @@ export class GeometryBuilder {
           v0: v2f, v1: v1f, v2: v0f, 
           normal: [0, 1, 0], materialIndex: floorMat,
           uv0: [u2, v2], uv1: [u1, v1], uv2: [u0, v0],
-          emissivity: 0.0
+          emissivity: 0.0, emissionExp: 0.0
         });
 
         const v0c: [number, number, number] = [vertices[i0], sector.ceilingheight, vertices[i0+1]];
@@ -286,7 +287,7 @@ export class GeometryBuilder {
             v0: v0c, v1: v1c, v2: v2c, 
             normal: [0, -1, 0], materialIndex: ceilMat,
             uv0: [u0, v0], uv1: [u1, v1], uv2: [u2, v2],
-            emissivity: 0.0
+            emissivity: 0.0, emissionExp: 0.0
           });
         }
       }

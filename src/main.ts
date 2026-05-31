@@ -22,6 +22,18 @@ async function init() {
           <label>Emission Intensity: <span id="intensityVal">5.0</span></label><br>
           <input type="range" id="intensitySlider" min="0" max="20" step="0.5" value="5" style="width: 100%;">
         </div>
+        <div style="margin-top: 10px; border-top: 1px solid #444; padding-top: 10px;">
+          <label>Emission FWHM (Degrees): <span id="fwhmVal">180</span></label><br>
+          <input type="range" id="fwhmSlider" min="1" max="180" step="1" value="180" style="width: 100%;">
+        </div>
+        <div style="margin-top: 10px; border-top: 1px solid #444; padding-top: 10px;">
+          <label>Ambient Light: <span id="ambientVal">0.05</span></label><br>
+          <input type="range" id="ambientSlider" min="0" max="0.5" step="0.01" value="0.05" style="width: 100%;">
+        </div>
+        <div style="margin-top: 10px; border-top: 1px solid #444; padding-top: 10px;">
+          <label>Sky Light: <span id="skyVal">1.0</span></label><br>
+          <input type="range" id="skySlider" min="0" max="5.0" step="0.1" value="1.0" style="width: 100%;">
+        </div>
       </div>
     </div>
     <div style="position: relative; display: inline-block;">
@@ -68,6 +80,12 @@ async function init() {
     const paintToggle = document.querySelector<HTMLInputElement>('#paintModeToggle')!;
     const intensitySlider = document.querySelector<HTMLInputElement>('#intensitySlider')!;
     const intensityVal = document.querySelector<HTMLElement>('#intensityVal')!;
+    const fwhmSlider = document.querySelector<HTMLInputElement>('#fwhmSlider')!;
+    const fwhmVal = document.querySelector<HTMLElement>('#fwhmVal')!;
+    const ambientSlider = document.querySelector<HTMLInputElement>('#ambientSlider')!;
+    const ambientVal = document.querySelector<HTMLElement>('#ambientVal')!;
+    const skySlider = document.querySelector<HTMLInputElement>('#skySlider')!;
+    const skyVal = document.querySelector<HTMLElement>('#skyVal')!;
     const crosshair = document.querySelector<HTMLElement>('#crosshair')!;
 
     paintToggle.addEventListener('change', () => {
@@ -76,10 +94,21 @@ async function init() {
     intensitySlider.addEventListener('input', () => {
       intensityVal.innerText = intensitySlider.value;
     });
+    fwhmSlider.addEventListener('input', () => {
+      fwhmVal.innerText = fwhmSlider.value;
+    });
+    ambientSlider.addEventListener('input', () => {
+      ambientVal.innerText = ambientSlider.value;
+      renderer.ambientLight = parseFloat(ambientSlider.value);
+    });
+    skySlider.addEventListener('input', () => {
+      skyVal.innerText = skySlider.value;
+      renderer.skyLight = parseFloat(skySlider.value);
+    });
 
     window.addEventListener('mousedown', e => {
       if (document.pointerLockElement === canvas && paintToggle.checked && e.button === 0) {
-        renderer.paintSurface(parseFloat(intensitySlider.value));
+        renderer.paintSurface(parseFloat(intensitySlider.value), parseFloat(fwhmSlider.value));
       }
     });
 
