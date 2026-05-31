@@ -32,6 +32,9 @@ export class WebGpuRenderer {
   private _renderScale = 1.0;
   private _temporalBlend = 0.2;
   private framesStill = 0;
+  private _volumetricsEnabled = false;
+  private _fogDensity = 0.002;
+  private _sunDir = vec3.fromValues(0.5, 0.707, 0.5);
 
   private bvhBuffer!: GPUBuffer;
 
@@ -57,6 +60,22 @@ export class WebGpuRenderer {
 
   public set temporalBlend(val: number) { this._temporalBlend = val; }
   public get temporalBlend() { return this._temporalBlend; }
+
+  public set volumetricsEnabled(val: boolean) { this._volumetricsEnabled = val; this.frameCounter = 0; }
+  public get volumetricsEnabled() { return this._volumetricsEnabled; }
+
+  public set fogDensity(val: number) { this._fogDensity = val; this.frameCounter = 0; }
+  public get fogDensity() { return this._fogDensity; }
+
+  public setSunAngle(azimuthDeg: number, elevationDeg: number) {
+    const az = azimuthDeg * Math.PI / 180;
+    const el = elevationDeg * Math.PI / 180;
+    this._sunDir[0] = Math.cos(el) * Math.cos(az);
+    this._sunDir[1] = Math.sin(el);
+    this._sunDir[2] = Math.cos(el) * Math.sin(az);
+    vec3.normalize(this._sunDir, this._sunDir);
+    this.frameCounter = 0;
+  }
 
   private get renderWidth() { return Math.max(1, Math.floor(this.canvas.width * this._renderScale)); }
   private get renderHeight() { return Math.max(1, Math.floor(this.canvas.height * this._renderScale)); }
@@ -140,7 +159,7 @@ export class WebGpuRenderer {
     this.bvhBuffer.unmap();
 
     this.cameraBuffer = this.device.createBuffer({
-      size: 32 * 4, // 32 floats (128 bytes)
+      size: 36 * 4, // 36 floats (144 bytes)
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -540,14 +559,17 @@ export class WebGpuRenderer {
       up[0], up[1], up[2], this.lightIndices.length,
       
       this.prevPos[0], this.prevPos[1], this.prevPos[2], this.renderWidth / this.renderHeight,
-      this.prevDir[0], this.prevDir[1], this.prevDir[2], 0,
+      this.prevDir[0], this.prevDir[1], this.prevDir[2], 0, // framesStill (uint)
       this.prevRight[0], this.prevRight[1], this.prevRight[2], this._temporalBlend,
-      this.prevUp[0], this.prevUp[1], this.prevUp[2], 0,
+      this.prevUp[0], this.prevUp[1], this.prevUp[2], this._fogDensity,
+      
+      this._sunDir[0], this._sunDir[1], this._sunDir[2], 0,
     ]);
     const camUint = new Uint32Array(camData.buffer);
     camUint[3] = this.frameCounter;
     camUint[15] = this.lightIndices.length;
     camUint[23] = this.framesStill;
+    camUint[35] = this._volumetricsEnabled ? 1 : 0;
 
     this.device.queue.writeBuffer(this.cameraBuffer, 0, camData);
     

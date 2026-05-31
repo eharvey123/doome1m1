@@ -47,7 +47,10 @@ struct Camera {
     prevRight: vec3<f32>,
     temporalBlend: f32,
     prevUp: vec3<f32>,
-    pad3: f32,
+    fogDensity: f32,
+    
+    sunDir: vec3<f32>,
+    volumetricsEnabled: u32,
 }
 
 @group(0) @binding(0) var<storage, read> triangles: array<Triangle>;
@@ -251,13 +254,109 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
             firstHitT = rec.t;
         }
         
-        if (rec.t < 1e29) {
-            let hitPoint = ray.origin + ray.dir * rec.t;
-            var normal = normalize(rec.normal);
-            // If hitting a backface, flip the normal so we bounce out instead of getting stuck
-            if (dot(normal, ray.dir) > 0.0) {
-                normal = -normal;
+        // Volumetric Scattering
+        var hitDist = rec.t;
+        var scatteredInFog = false;
+        
+        if (camera.volumetricsEnabled == 1u) {
+            let scatterDist = -log(max(0.0001, rand_pcg(&seed))) / camera.fogDensity;
+            if (scatterDist < rec.t) {
+                hitDist = scatterDist;
+                scatteredInFog = true;
+            } else if (rec.t < 1e29) {
+                // Ray hit surface, reduce throughput by fog transmittance
+                throughput *= exp(-camera.fogDensity * rec.t);
             }
+        }
+        
+        if (hitDist < 1e29) {
+            let hitPoint = ray.origin + ray.dir * hitDist;
+            
+            if (scatteredInFog) {
+                let normal = randomHemisphereDir(-ray.dir, &seed); // Isotropic Phase Function
+                
+                // Volumetric NEE (Next Event Estimation)
+                if (camera.numLights > 0u) {
+                    let lightIdxStr = min(u32(rand_pcg(&seed) * f32(camera.numLights)), camera.numLights - 1u);
+                    let lightTriIdx = lightIndices[lightIdxStr];
+                    let lightTri = triangles[lightTriIdx];
+                    
+                    let r1 = rand_pcg(&seed);
+                    let r2 = rand_pcg(&seed);
+                    let sqrt_r1 = sqrt(r1);
+                    let u_light = 1.0 - sqrt_r1;
+                    let v_light = r2 * sqrt_r1;
+                    let w_light = 1.0 - u_light - v_light;
+                    
+                    let lightPoint = lightTri.v0 * u_light + lightTri.v1 * v_light + lightTri.v2 * w_light;
+                    let lightDirUnnorm = lightPoint - hitPoint;
+                    let lightDist = length(lightDirUnnorm);
+                    let lightDir = lightDirUnnorm / lightDist;
+                    
+                    let cosLight = dot(lightTri.normal, -lightDir);
+                    
+                    if (cosLight > 0.0) {
+                        var shadowRay: Ray;
+                        shadowRay.origin = hitPoint;
+                        shadowRay.dir = lightDir;
+                        shadowRay.invDir = 1.0 / lightDir;
+                        
+                        let shadowRec = bvhIntersect(shadowRay);
+                        if (shadowRec.t >= lightDist - 0.01) {
+                            let edge1 = lightTri.v1 - lightTri.v0;
+                            let edge2 = lightTri.v2 - lightTri.v0;
+                            let lightArea = length(cross(edge1, edge2)) * 0.5;
+                            
+                            let solidAngle = (lightArea * cosLight) / (lightDist * lightDist);
+                            
+                            var lightEmissionMultiplier = 1.0;
+                            if (lightTri.emissionExp > 0.0) {
+                                lightEmissionMultiplier = pow(cosLight, lightTri.emissionExp) * (lightTri.emissionExp + 1.0);
+                            }
+                            
+                            let lightMat = materials[lightTri.materialIndex];
+                            let lightUV = (1.0 - u_light - v_light) * lightTri.uv0 + u_light * lightTri.uv1 + v_light * lightTri.uv2;
+                            let lSampleU = lightMat.u + fract(lightUV.x / lightMat.width) * lightMat.w;
+                            let lSampleV = lightMat.v + fract(lightUV.y / lightMat.height) * lightMat.h;
+                            let lTexColor = textureSampleLevel(atlasTex, atlasSamp, vec2<f32>(lSampleU, lSampleV), 0.0).rgb;
+                            
+                            let lightRadiance = lTexColor * lightTri.emissivity * lightEmissionMultiplier;
+                            
+                            // Phase function is 1/(4pi) for isotropic scattering
+                            let phaseFunction = 1.0 / (4.0 * 3.14159);
+                            let transmittance = exp(-camera.fogDensity * lightDist);
+                            
+                            color += throughput * lightRadiance * phaseFunction * transmittance * (solidAngle / 3.14159) * f32(camera.numLights);
+                        }
+                    }
+                }
+                
+                // Volumetric Sun NEE
+                var sunRay: Ray;
+                sunRay.origin = hitPoint;
+                sunRay.dir = camera.sunDir;
+                sunRay.invDir = 1.0 / camera.sunDir;
+                let sunRec = bvhIntersect(sunRay);
+                if (sunRec.t > 1e28) {
+                    let sunRadiance = vec3(1.0, 0.9, 0.8) * camera.skyLight * 5.0;
+                    let phaseFunction = 1.0 / (4.0 * 3.14159);
+                    var sunTransmittance = 1.0;
+                    if (camera.volumetricsEnabled == 1u) {
+                        sunTransmittance = exp(-camera.fogDensity * 50.0);
+                    }
+                    color += throughput * sunRadiance * phaseFunction * sunTransmittance;
+                }
+                
+                ray.origin = hitPoint;
+                ray.dir = normal;
+                ray.invDir = 1.0 / ray.dir;
+                
+                // No color absorption, pure scattering
+            } else {
+                var normal = normalize(rec.normal);
+                if (dot(normal, ray.dir) > 0.0) {
+                    normal = -normal;
+                }
             
             let tri = triangles[rec.triIndex];
             let mat = materials[tri.materialIndex];
@@ -343,9 +442,28 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
             
             throughput *= texColor;
             
+            // Surface Sun NEE
+            let sunCos = dot(normal, camera.sunDir);
+            if (sunCos > 0.0) {
+                var sunRay: Ray;
+                sunRay.origin = hitPoint + normal * 0.001;
+                sunRay.dir = camera.sunDir;
+                sunRay.invDir = 1.0 / camera.sunDir;
+                let sunRec = bvhIntersect(sunRay);
+                if (sunRec.t > 1e28) {
+                    let sunRadiance = vec3(1.0, 0.9, 0.8) * camera.skyLight * 5.0;
+                    var sunTransmittance = 1.0;
+                    if (camera.volumetricsEnabled == 1u) {
+                        sunTransmittance = exp(-camera.fogDensity * 50.0);
+                    }
+                    color += throughput * sunRadiance * (sunCos / 3.14159) * sunTransmittance;
+                }
+            }
+            
             ray.origin = hitPoint + normal * 0.001;
             ray.dir = randomHemisphereDir(normal, &seed);
             ray.invDir = 1.0 / ray.dir;
+            } // End of Surface Hit
             
             // Russian Roulette
             let p = max(throughput.r, max(throughput.g, throughput.b));
@@ -356,7 +474,13 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
                 throughput /= p;
             }
         } else {
-            color += throughput * vec3(0.5, 0.7, 1.0) * camera.skyLight;
+            // Hit the sky
+            let sunDot = dot(ray.dir, camera.sunDir);
+            if (sunDot > 0.999) {
+                color += throughput * vec3(1.0, 0.9, 0.8) * camera.skyLight * 5.0;
+            } else {
+                color += throughput * vec3(0.1, 0.15, 0.2) * camera.skyLight * 0.1;
+            }
             break;
         }
     }

@@ -39,8 +39,26 @@ async function init() {
           <input type="range" id="skySlider" min="0" max="5.0" step="0.1" value="1.0" style="width: 100%;">
         </div>
         <div style="margin-top: 10px; border-top: 1px solid #444; padding-top: 10px;">
+          <label>Sun Azimuth: <span id="azimuthVal">45</span>°</label><br>
+          <input type="range" id="azimuthSlider" min="0" max="360" step="1" value="45" style="width: 100%;">
+        </div>
+        <div style="margin-top: 10px; border-top: 1px solid #444; padding-top: 10px;">
+          <label>Sun Elevation: <span id="elevationVal">45</span>°</label><br>
+          <input type="range" id="elevationSlider" min="0" max="90" step="1" value="45" style="width: 100%;">
+        </div>
+        <div style="margin-top: 10px; border-top: 1px solid #444; padding-top: 10px;">
           <label>Temporal Smear: <span id="smearVal">0.2</span></label><br>
           <input type="range" id="smearSlider" min="0.01" max="1.0" step="0.01" value="0.2" style="width: 100%;">
+        </div>
+        <div style="margin-top: 10px; border-top: 1px solid #444; padding-top: 10px;">
+          <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+            <input type="checkbox" id="volumetricToggle">
+            <strong>Enable Volumetrics</strong>
+          </label>
+          <div style="margin-top: 10px;">
+            <label>Fog Density: <span id="fogVal">0.002</span></label><br>
+            <input type="range" id="fogSlider" min="0.0001" max="0.01" step="0.0001" value="0.002" style="width: 100%;">
+          </div>
         </div>
       </div>
     </div>
@@ -104,6 +122,13 @@ async function init() {
 
     const smearSlider = document.querySelector<HTMLInputElement>('#smearSlider')!;
     const smearVal = document.querySelector<HTMLElement>('#smearVal')!;
+    const volumetricToggle = document.querySelector<HTMLInputElement>('#volumetricToggle')!;
+    const fogSlider = document.querySelector<HTMLInputElement>('#fogSlider')!;
+    const fogVal = document.querySelector<HTMLElement>('#fogVal')!;
+    const azimuthSlider = document.querySelector<HTMLInputElement>('#azimuthSlider')!;
+    const azimuthVal = document.querySelector<HTMLElement>('#azimuthVal')!;
+    const elevationSlider = document.querySelector<HTMLInputElement>('#elevationSlider')!;
+    const elevationVal = document.querySelector<HTMLElement>('#elevationVal')!;
 
     paintToggle.addEventListener('change', () => {
       crosshair.style.display = paintToggle.checked ? 'block' : 'none';
@@ -129,6 +154,21 @@ async function init() {
     smearSlider.addEventListener('input', () => {
       smearVal.innerText = smearSlider.value;
       renderer.temporalBlend = parseFloat(smearSlider.value);
+    });
+    volumetricToggle.addEventListener('change', () => {
+      renderer.volumetricsEnabled = volumetricToggle.checked;
+    });
+    fogSlider.addEventListener('input', () => {
+      fogVal.innerText = fogSlider.value;
+      renderer.fogDensity = parseFloat(fogSlider.value);
+    });
+    azimuthSlider.addEventListener('input', () => {
+      azimuthVal.innerText = azimuthSlider.value;
+      renderer.setSunAngle(parseFloat(azimuthSlider.value), parseFloat(elevationSlider.value));
+    });
+    elevationSlider.addEventListener('input', () => {
+      elevationVal.innerText = elevationSlider.value;
+      renderer.setSunAngle(parseFloat(azimuthSlider.value), parseFloat(elevationSlider.value));
     });
 
     window.addEventListener('mousedown', e => {
