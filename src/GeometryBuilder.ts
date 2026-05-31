@@ -45,7 +45,7 @@ export class GeometryBuilder {
 
   public build() {
     // Add a dummy material for missing textures
-    this.materials.push({ atlas: { u: 0, v: 0, w: 1, h: 1, width: 64, height: 64 } });
+    this.materials.push({ atlas: { u: 0, v: 0, w: 1, h: 1, width: 64, height: 64, isOpaque: true } });
 
     this.buildWalls();
     this.buildFloorsAndCeilings();

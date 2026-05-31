@@ -8,10 +8,10 @@ import { WebGpuRenderer } from './WebGpuRenderer.ts';
 async function init() {
   const app = document.querySelector<HTMLDivElement>('#app')!;
   app.innerHTML = `
-    <div id="ui">
-      <h1>WebGPU Doom Path Tracer</h1>
+    <div id="ui" style="position: absolute; top: 10px; left: 10px; z-index: 10; background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px; max-width: 350px; color: white;">
+      <h2 style="margin-top: 0;">WebGPU Doom Path Tracer</h2>
       <p id="status">Loading DOOM1.WAD...</p>
-      <p>Click on the canvas to lock pointer. Use WASD to move.</p>
+      <p style="font-size: 0.9em; color: #ccc;">Click on the canvas to lock pointer. Use WASD to move.</p>
       
       <div id="paint-ui" style="display: none; background: rgba(0,0,0,0.8); padding: 10px; border-radius: 8px; margin-top: 10px; border: 1px solid #444;">
         <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
@@ -27,6 +27,10 @@ async function init() {
           <input type="range" id="fwhmSlider" min="1" max="180" step="1" value="180" style="width: 100%;">
         </div>
         <div style="margin-top: 10px; border-top: 1px solid #444; padding-top: 10px;">
+          <label>Render Scale: <span id="scaleVal">1.0</span></label><br>
+          <input type="range" id="scaleSlider" min="0.1" max="1.0" step="0.1" value="1.0" style="width: 100%;">
+        </div>
+        <div style="margin-top: 10px; border-top: 1px solid #444; padding-top: 10px;">
           <label>Ambient Light: <span id="ambientVal">0.05</span></label><br>
           <input type="range" id="ambientSlider" min="0" max="0.5" step="0.01" value="0.05" style="width: 100%;">
         </div>
@@ -36,8 +40,8 @@ async function init() {
         </div>
       </div>
     </div>
-    <div style="position: relative; display: inline-block;">
-      <canvas id="glcanvas" width="800" height="600"></canvas>
+    <div style="position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; overflow: hidden; z-index: 1; background: black;">
+      <canvas id="glcanvas" style="width: 100%; height: 100%; display: block; object-fit: cover;"></canvas>
       <div id="crosshair" style="display: none; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); color: white; pointer-events: none; font-size: 24px; text-shadow: 0 0 2px black;">+</div>
     </div>
   `;
@@ -70,6 +74,10 @@ async function init() {
     document.querySelector<HTMLParagraphElement>('#status')!.innerText = "Initializing WebGPU...";
 
     const canvas = document.querySelector<HTMLCanvasElement>('#glcanvas')!;
+    // Set internal resolution to match the physical pixels of the display
+    canvas.width = Math.floor(window.innerWidth * window.devicePixelRatio);
+    canvas.height = Math.floor(window.innerHeight * window.devicePixelRatio);
+    
     const renderer = new WebGpuRenderer(canvas);
     await renderer.init(orderedTriangles, nodes, mapData, materials, atlasBuilder);
 
@@ -82,6 +90,8 @@ async function init() {
     const intensityVal = document.querySelector<HTMLElement>('#intensityVal')!;
     const fwhmSlider = document.querySelector<HTMLInputElement>('#fwhmSlider')!;
     const fwhmVal = document.querySelector<HTMLElement>('#fwhmVal')!;
+    const scaleSlider = document.querySelector<HTMLInputElement>('#scaleSlider')!;
+    const scaleVal = document.querySelector<HTMLElement>('#scaleVal')!;
     const ambientSlider = document.querySelector<HTMLInputElement>('#ambientSlider')!;
     const ambientVal = document.querySelector<HTMLElement>('#ambientVal')!;
     const skySlider = document.querySelector<HTMLInputElement>('#skySlider')!;
@@ -96,6 +106,10 @@ async function init() {
     });
     fwhmSlider.addEventListener('input', () => {
       fwhmVal.innerText = fwhmSlider.value;
+    });
+    scaleSlider.addEventListener('input', () => {
+      scaleVal.innerText = scaleSlider.value;
+      renderer.renderScale = parseFloat(scaleSlider.value);
     });
     ambientSlider.addEventListener('input', () => {
       ambientVal.innerText = ambientSlider.value;

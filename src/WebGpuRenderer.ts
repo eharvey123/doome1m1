@@ -25,6 +25,10 @@ export class WebGpuRenderer {
   private pitch = 0;
   private _ambientLight = 0.05;
   private _skyLight = 1.0;
+  private _renderScale = 1.0;
+
+  private bvhBuffer!: GPUBuffer;
+  private matBuffer!: GPUBuffer;
 
   public set ambientLight(val: number) {
     this._ambientLight = val;
@@ -37,6 +41,17 @@ export class WebGpuRenderer {
     this.frameCounter = 0;
   }
   public get skyLight() { return this._skyLight; }
+
+  public set renderScale(val: number) {
+    if (this._renderScale !== val) {
+      this._renderScale = val;
+      this.recreateTextures();
+    }
+  }
+  public get renderScale() { return this._renderScale; }
+
+  private get renderWidth() { return Math.max(1, Math.floor(this.canvas.width * this._renderScale)); }
+  private get renderHeight() { return Math.max(1, Math.floor(this.canvas.height * this._renderScale)); }
 
   private canvas: HTMLCanvasElement;
   private mapData!: MapData;
@@ -96,13 +111,13 @@ export class WebGpuRenderer {
     this.triBuffer.unmap();
 
     const bvhBufferSize = Math.max(bvhNodes.length * 32, 32); // 32 bytes per BvhNode
-    const bvhBuffer = this.device.createBuffer({
+    this.bvhBuffer = this.device.createBuffer({
       size: Math.max(bvhBufferSize, 32),
       usage: GPUBufferUsage.STORAGE,
       mappedAtCreation: true,
     });
     if (bvhNodes.length > 0) {
-      const bvhMapped = bvhBuffer.getMappedRange();
+      const bvhMapped = this.bvhBuffer.getMappedRange();
       const bvhArray = new Float32Array(bvhMapped);
       const bvhUintArray = new Uint32Array(bvhMapped);
       for (let i = 0; i < bvhNodes.length; i++) {
@@ -114,29 +129,30 @@ export class WebGpuRenderer {
         bvhUintArray[offset+7] = n.triCount;
       }
     }
-    bvhBuffer.unmap();
+    this.bvhBuffer.unmap();
 
     this.cameraBuffer = this.device.createBuffer({
-      size: 64, // 4 vec4s
+      size: 16 * 4, // 16 floats
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
-    const matBuffer = this.device.createBuffer({
-      size: Math.max(materials.length * 32, 32),
+    this.matBuffer = this.device.createBuffer({
+      size: Math.max(materials.length * 32, 32), // 32 bytes per material (8 floats)
       usage: GPUBufferUsage.STORAGE,
       mappedAtCreation: true,
     });
     if (materials.length > 0) {
-      const matArray = new Float32Array(matBuffer.getMappedRange());
+      const matArray = new Float32Array(this.matBuffer.getMappedRange());
       for (let i = 0; i < materials.length; i++) {
         const m = materials[i].atlas;
         const off = i * 8;
         matArray[off+0] = m.u; matArray[off+1] = m.v;
         matArray[off+2] = m.w; matArray[off+3] = m.h;
         matArray[off+4] = m.width; matArray[off+5] = m.height;
+        matArray[off+6] = m.isOpaque ? 1.0 : 0.0;
       }
     }
-    matBuffer.unmap();
+    this.matBuffer.unmap();
 
     this.atlasTexture = this.device.createTexture({
       size: [atlasBuilder.atlasWidth, atlasBuilder.atlasHeight],
@@ -162,18 +178,26 @@ export class WebGpuRenderer {
       }
     });
 
-    this.createBindGroup(this.triBuffer, bvhBuffer, matBuffer);
+    this.createBindGroup(this.triBuffer, this.bvhBuffer, this.matBuffer);
 
     // Render pipeline for copying texture to screen
     const fullscreenWGSL = `
-      @vertex fn vs(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4<f32> {
+      struct VSOutput {
+        @builtin(position) pos: vec4<f32>,
+        @location(0) uv: vec2<f32>,
+      }
+      @vertex fn vs(@builtin(vertex_index) vi: u32) -> VSOutput {
+        var out: VSOutput;
         var pos = array<vec2<f32>, 3>(vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
-        return vec4<f32>(pos[vi], 0.0, 1.0);
+        out.pos = vec4<f32>(pos[vi], 0.0, 1.0);
+        out.uv = pos[vi] * 0.5 + vec2<f32>(0.5, 0.5);
+        out.uv.y = 1.0 - out.uv.y;
+        return out;
       }
       @group(0) @binding(0) var tex: texture_2d<f32>;
       @group(0) @binding(1) var samp: sampler;
-      @fragment fn fs(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
-        var c = textureSample(tex, samp, pos.xy / vec2<f32>(textureDimensions(tex))).rgb;
+      @fragment fn fs(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
+        var c = textureSample(tex, samp, uv).rgb;
         
         // ACES filmic tonemapping curve
         let a = 2.51;
@@ -202,14 +226,20 @@ export class WebGpuRenderer {
 
   private createTextures() {
     this.accumBuffer = this.device.createBuffer({
-      size: this.canvas.width * this.canvas.height * 16,
+      size: this.renderWidth * this.renderHeight * 16,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
     this.outputTexture = this.device.createTexture({
-      size: [this.canvas.width, this.canvas.height],
+      size: [this.renderWidth, this.renderHeight],
       format: 'rgba16float',
       usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING
     });
+  }
+
+  private recreateTextures() {
+    this.createTextures();
+    this.createBindGroup(this.triBuffer, this.bvhBuffer, this.matBuffer);
+    this.frameCounter = 0;
   }
 
   private createBindGroup(triBuffer: GPUBuffer, bvhBuffer: GPUBuffer, matBuffer: GPUBuffer) {
@@ -471,8 +501,8 @@ export class WebGpuRenderer {
     computePass.setPipeline(this.computePipeline);
     computePass.setBindGroup(0, this.bindGroup);
     computePass.dispatchWorkgroups(
-      Math.ceil(this.canvas.width / 8),
-      Math.ceil(this.canvas.height / 8)
+      Math.ceil(this.renderWidth / 16),
+      Math.ceil(this.renderHeight / 16)
     );
     computePass.end();
 

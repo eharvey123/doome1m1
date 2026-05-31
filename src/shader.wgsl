@@ -144,17 +144,23 @@ fn bvhIntersect(ray: Ray) -> HitRecord {
                     // Check alpha!
                     let tri = triangles[triHit.triIndex];
                     let mat = materials[tri.materialIndex];
-                    let uv = (1.0 - triHit.u - triHit.v) * tri.uv0 + triHit.u * tri.uv1 + triHit.v * tri.uv2;
                     
-                    let sampleU = mat.u + fract(uv.x / mat.width) * mat.w;
-                    let sampleV = mat.v + fract(uv.y / mat.height) * mat.h;
-                    
-                    // In a compute shader we can't easily use textureSampleLevel if we don't have derivatives, 
-                    // but we can use textureSampleLevel with level 0
-                    let texColor = textureSampleLevel(atlasTex, atlasSamp, vec2<f32>(sampleU, sampleV), 0.0);
-                    
-                    if (texColor.a > 0.5) {
+                    if (mat.pad1 > 0.5) {
+                        // Opaque material, no need to sample texture for alpha
                         rec = triHit;
+                    } else {
+                        let uv = (1.0 - triHit.u - triHit.v) * tri.uv0 + triHit.u * tri.uv1 + triHit.v * tri.uv2;
+                        
+                        let sampleU = mat.u + fract(uv.x / mat.width) * mat.w;
+                        let sampleV = mat.v + fract(uv.y / mat.height) * mat.h;
+                        
+                        // In a compute shader we can't easily use textureSampleLevel if we don't have derivatives, 
+                        // but we can use textureSampleLevel with level 0
+                        let texColor = textureSampleLevel(atlasTex, atlasSamp, vec2<f32>(sampleU, sampleV), 0.0);
+                        
+                        if (texColor.a > 0.5) {
+                            rec = triHit;
+                        }
                     }
                 }
             }
@@ -204,7 +210,7 @@ fn randomHemisphereDir(normal: vec3<f32>, seed: ptr<function, u32>) -> vec3<f32>
     return u * x + v * y + w * z;
 }
 
-@compute @workgroup_size(8, 8)
+@compute @workgroup_size(16, 16)
 fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
     let dimensions = textureDimensions(fb);
     if (GlobalInvocationID.x >= dimensions.x || GlobalInvocationID.y >= dimensions.y) {

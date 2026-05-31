@@ -7,6 +7,7 @@ export interface AtlasRect {
   height: number;
   w: number; // width in UV space [0..1]
   h: number; // height in UV space [0..1]
+  isOpaque: boolean;
 }
 
 export class TextureAtlasBuilder {
@@ -113,13 +114,27 @@ export class TextureAtlasBuilder {
       }
     }
 
+    // Check opacity
+    let isOpaque = true;
+    for (let py = 0; py < texDef.height; py++) {
+      for (let px = 0; px < texDef.width; px++) {
+        const idx = ((y + py) * this.atlasWidth + (x + px)) * 4;
+        if (this.atlasData[idx + 3] < 255) {
+          isOpaque = false;
+          break;
+        }
+      }
+      if (!isOpaque) break;
+    }
+
     this.textureMap.set(name, {
       u: x / this.atlasWidth,
       v: y / this.atlasHeight,
       w: texDef.width / this.atlasWidth,
       h: texDef.height / this.atlasHeight,
       width: texDef.width,
-      height: texDef.height
+      height: texDef.height,
+      isOpaque
     });
   }
 
@@ -145,13 +160,15 @@ export class TextureAtlasBuilder {
       }
     }
 
+    // Flats are always opaque in Doom
     this.textureMap.set(name, {
       u: x / this.atlasWidth,
       v: y / this.atlasHeight,
       w: flat.width / this.atlasWidth,
       h: flat.height / this.atlasHeight,
       width: flat.width,
-      height: flat.height
+      height: flat.height,
+      isOpaque: true
     });
   }
 }
