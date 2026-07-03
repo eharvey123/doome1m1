@@ -9,9 +9,14 @@ export class WebGpuRenderer {
   private device!: GPUDevice;
   private context!: GPUCanvasContext;
   private computePipeline!: GPUComputePipeline;
+  private lightTracePipeline!: GPUComputePipeline;
   private renderPipeline!: GPURenderPipeline;
   private bindGroup0!: GPUBindGroup;
   private bindGroup1!: GPUBindGroup;
+  private lightBindGroup0!: GPUBindGroup;
+  private lightBindGroup1!: GPUBindGroup;
+  private screenBindGroup0!: GPUBindGroup;
+  private screenBindGroup1!: GPUBindGroup;
   
   private cameraBuffer!: GPUBuffer;
   private matBuffer!: GPUBuffer;
@@ -20,6 +25,7 @@ export class WebGpuRenderer {
   private historyTex0!: GPUTexture;
   private historyTex1!: GPUTexture;
   private atlasTexture!: GPUTexture;
+  private splatBuffer!: GPUBuffer;
   
   private frameCounter = 0;
   
@@ -35,6 +41,7 @@ export class WebGpuRenderer {
   private _volumetricsEnabled = false;
   private _fogDensity = 0.002;
   private _sunDir = vec3.fromValues(0.5, 0.707, 0.5);
+  private _maxBounces = 2;
 
   private bvhBuffer!: GPUBuffer;
 
@@ -66,6 +73,9 @@ export class WebGpuRenderer {
 
   public set fogDensity(val: number) { this._fogDensity = val; this.frameCounter = 0; }
   public get fogDensity() { return this._fogDensity; }
+
+  public set maxBounces(val: number) { this._maxBounces = Math.max(1, Math.floor(val)); this.frameCounter = 0; }
+  public get maxBounces() { return this._maxBounces; }
 
   public setSunAngle(azimuthDeg: number, elevationDeg: number) {
     const az = azimuthDeg * Math.PI / 180;
@@ -124,9 +134,9 @@ export class WebGpuRenderer {
       let offset = i * 24; // 24 floats
       triArray[offset+0] = t.v0[0]; triArray[offset+1] = t.v0[1]; triArray[offset+2] = t.v0[2];
       triUintArray[offset+3] = t.materialIndex;
-      triArray[offset+4] = t.v1[0]; triArray[offset+5] = t.v1[1]; triArray[offset+6] = t.v1[2];
+      triArray[offset+4] = t.v1[0] - t.v0[0]; triArray[offset+5] = t.v1[1] - t.v0[1]; triArray[offset+6] = t.v1[2] - t.v0[2];
       triArray[offset+7] = t.emissivity;
-      triArray[offset+8] = t.v2[0]; triArray[offset+9] = t.v2[1]; triArray[offset+10] = t.v2[2];
+      triArray[offset+8] = t.v2[0] - t.v0[0]; triArray[offset+9] = t.v2[1] - t.v0[1]; triArray[offset+10] = t.v2[2] - t.v0[2];
       triArray[offset+11] = t.emissionExp;
       triArray[offset+12] = t.normal[0]; triArray[offset+13] = t.normal[1]; triArray[offset+14] = t.normal[2];
       
@@ -159,7 +169,7 @@ export class WebGpuRenderer {
     this.bvhBuffer.unmap();
 
     this.cameraBuffer = this.device.createBuffer({
-      size: 36 * 4, // 36 floats (144 bytes)
+      size: 40 * 4, // 40 floats (160 bytes)
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -210,7 +220,13 @@ export class WebGpuRenderer {
       }
     });
 
-    this.createBindGroup(this.triBuffer, this.bvhBuffer, this.matBuffer);
+    this.lightTracePipeline = this.device.createComputePipeline({
+      layout: 'auto',
+      compute: {
+        module: shaderModule,
+        entryPoint: 'lightTrace',
+      }
+    });
 
     // Render pipeline for copying texture to screen
     const fullscreenWGSL = `
@@ -254,6 +270,10 @@ export class WebGpuRenderer {
         targets: [{ format: presentationFormat }]
       }
     });
+
+    // Now that renderPipeline exists, create screen bind groups
+    this.createBindGroup(this.triBuffer, this.bvhBuffer, this.matBuffer);
+    this.createScreenBindGroups();
   }
 
   private createTextures() {
@@ -267,11 +287,21 @@ export class WebGpuRenderer {
       format: 'rgba16float',
       usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING
     });
+
+    // Create/recreate splat buffer for light tracing
+    if (this.splatBuffer) {
+      this.splatBuffer.destroy();
+    }
+    this.splatBuffer = this.device.createBuffer({
+      size: this.renderWidth * this.renderHeight * 3 * 4, // 3 u32 per pixel (R, G, B)
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
   }
 
   private recreateTextures() {
     this.createTextures();
     this.createBindGroup(this.triBuffer, this.bvhBuffer, this.matBuffer);
+    this.createScreenBindGroups();
     this.frameCounter = 0;
   }
 
@@ -292,6 +322,7 @@ export class WebGpuRenderer {
         { binding: 7, resource: atlasSampler },
         { binding: 8, resource: { buffer: this.lightBuffer } },
         { binding: 9, resource: historySampler },
+        { binding: 10, resource: { buffer: this.splatBuffer } },
       ]
     });
 
@@ -308,6 +339,56 @@ export class WebGpuRenderer {
         { binding: 7, resource: atlasSampler },
         { binding: 8, resource: { buffer: this.lightBuffer } },
         { binding: 9, resource: historySampler },
+        { binding: 10, resource: { buffer: this.splatBuffer } },
+      ]
+    });
+
+    // Light trace bind groups (separate layout from lightTracePipeline)
+    // Note: lightTrace doesn't use historyTexRead (4) or historySamp (9)
+    this.lightBindGroup0 = this.device.createBindGroup({
+      layout: this.lightTracePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: triBuffer } },
+        { binding: 1, resource: { buffer: bvhBuffer } },
+        { binding: 2, resource: { buffer: this.cameraBuffer } },
+        { binding: 3, resource: this.historyTex1.createView() },
+        { binding: 5, resource: { buffer: matBuffer } },
+        { binding: 6, resource: this.atlasTexture.createView() },
+        { binding: 7, resource: atlasSampler },
+        { binding: 8, resource: { buffer: this.lightBuffer } },
+        { binding: 10, resource: { buffer: this.splatBuffer } },
+      ],
+    });
+    this.lightBindGroup1 = this.device.createBindGroup({
+      layout: this.lightTracePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: triBuffer } },
+        { binding: 1, resource: { buffer: bvhBuffer } },
+        { binding: 2, resource: { buffer: this.cameraBuffer } },
+        { binding: 3, resource: this.historyTex0.createView() },
+        { binding: 5, resource: { buffer: matBuffer } },
+        { binding: 6, resource: this.atlasTexture.createView() },
+        { binding: 7, resource: atlasSampler },
+        { binding: 8, resource: { buffer: this.lightBuffer } },
+        { binding: 10, resource: { buffer: this.splatBuffer } },
+      ],
+    });
+  }
+
+  private createScreenBindGroups() {
+    const screenSampler = this.device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
+    this.screenBindGroup0 = this.device.createBindGroup({
+      layout: this.renderPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: this.historyTex1.createView() },
+        { binding: 1, resource: screenSampler },
+      ]
+    });
+    this.screenBindGroup1 = this.device.createBindGroup({
+      layout: this.renderPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: this.historyTex0.createView() },
+        { binding: 1, resource: screenSampler },
       ]
     });
   }
@@ -564,12 +645,14 @@ export class WebGpuRenderer {
       this.prevUp[0], this.prevUp[1], this.prevUp[2], this._fogDensity,
       
       this._sunDir[0], this._sunDir[1], this._sunDir[2], 0,
+      0, 0, 0, 0,
     ]);
     const camUint = new Uint32Array(camData.buffer);
     camUint[3] = this.frameCounter;
     camUint[15] = this.lightIndices.length;
     camUint[23] = this.framesStill;
     camUint[35] = this._volumetricsEnabled ? 1 : 0;
+    camUint[36] = this._maxBounces;
 
     this.device.queue.writeBuffer(this.cameraBuffer, 0, camData);
     
@@ -584,13 +667,27 @@ export class WebGpuRenderer {
     this.updateCamera(0, 0, 0, 0); // Just to push frameCounter
 
     const encoder = this.device.createCommandEncoder();
+
+    // Clear splat buffer each frame
+    encoder.clearBuffer(this.splatBuffer);
     
+    // Light trace pass (bidirectional - traces from lights to camera)
+    const lightPass = encoder.beginComputePass();
+    lightPass.setPipeline(this.lightTracePipeline);
+    lightPass.setBindGroup(0, this.frameCounter % 2 === 0 ? this.lightBindGroup0 : this.lightBindGroup1);
+    lightPass.dispatchWorkgroups(
+      Math.ceil(this.renderWidth / 8),
+      Math.ceil(this.renderHeight / 8)
+    );
+    lightPass.end();
+    
+    // Camera trace pass (reads splat buffer contributions)
     const computePass = encoder.beginComputePass();
     computePass.setPipeline(this.computePipeline);
     computePass.setBindGroup(0, this.frameCounter % 2 === 0 ? this.bindGroup0 : this.bindGroup1);
     computePass.dispatchWorkgroups(
-      Math.ceil(this.renderWidth / 16),
-      Math.ceil(this.renderHeight / 16)
+      Math.ceil(this.renderWidth / 8),
+      Math.ceil(this.renderHeight / 8)
     );
     computePass.end();
 
@@ -602,17 +699,7 @@ export class WebGpuRenderer {
       }]
     });
     renderPass.setPipeline(this.renderPipeline);
-    
-    const sampler = this.device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
-    const screenBindGroup = this.device.createBindGroup({
-      layout: this.renderPipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: this.frameCounter % 2 === 0 ? this.historyTex1.createView() : this.historyTex0.createView() },
-        { binding: 1, resource: sampler },
-      ]
-    });
-    
-    renderPass.setBindGroup(0, screenBindGroup);
+    renderPass.setBindGroup(0, this.frameCounter % 2 === 0 ? this.screenBindGroup0 : this.screenBindGroup1);
     renderPass.draw(3);
     renderPass.end();
 

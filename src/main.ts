@@ -60,6 +60,10 @@ async function init() {
             <input type="range" id="fogSlider" min="0.0001" max="0.01" step="0.0001" value="0.002" style="width: 100%;">
           </div>
         </div>
+        <div style="margin-top: 10px; border-top: 1px solid #444; padding-top: 10px;">
+          <label>Max Bounces: <span id="bounceVal">2</span></label><br>
+          <input type="range" id="bounceSlider" min="1" max="8" step="1" value="2" style="width: 100%;">
+        </div>
       </div>
     </div>
     <div style="position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; overflow: hidden; z-index: 1; background: black;">
@@ -129,6 +133,8 @@ async function init() {
     const azimuthVal = document.querySelector<HTMLElement>('#azimuthVal')!;
     const elevationSlider = document.querySelector<HTMLInputElement>('#elevationSlider')!;
     const elevationVal = document.querySelector<HTMLElement>('#elevationVal')!;
+    const bounceSlider = document.querySelector<HTMLInputElement>('#bounceSlider')!;
+    const bounceVal = document.querySelector<HTMLElement>('#bounceVal')!;
 
     paintToggle.addEventListener('change', () => {
       crosshair.style.display = paintToggle.checked ? 'block' : 'none';
@@ -169,6 +175,10 @@ async function init() {
     elevationSlider.addEventListener('input', () => {
       elevationVal.innerText = elevationSlider.value;
       renderer.setSunAngle(parseFloat(azimuthSlider.value), parseFloat(elevationSlider.value));
+    });
+    bounceSlider.addEventListener('input', () => {
+      bounceVal.innerText = bounceSlider.value;
+      renderer.maxBounces = parseInt(bounceSlider.value);
     });
 
     window.addEventListener('mousedown', e => {

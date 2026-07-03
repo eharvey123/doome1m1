@@ -1,9 +1,9 @@
 struct Triangle {
     v0: vec3<f32>,
     materialIndex: u32,
-    v1: vec3<f32>,
+    edge1: vec3<f32>,
     emissivity: f32,
-    v2: vec3<f32>,
+    edge2: vec3<f32>,
     emissionExp: f32,
     normal: vec3<f32>,
     pad3: u32,
@@ -51,6 +51,10 @@ struct Camera {
     
     sunDir: vec3<f32>,
     volumetricsEnabled: u32,
+    maxBounces: u32,
+    pad_end1: u32,
+    pad_end2: u32,
+    pad_end3: u32,
 }
 
 @group(0) @binding(0) var<storage, read> triangles: array<Triangle>;
@@ -63,6 +67,7 @@ struct Camera {
 @group(0) @binding(7) var atlasSamp: sampler;
 @group(0) @binding(8) var<storage, read> lightIndices: array<u32>;
 @group(0) @binding(9) var historySamp: sampler;
+@group(0) @binding(10) var<storage, read_write> splatBuffer: array<atomic<u32>>;
 
 struct Ray {
     origin: vec3<f32>,
@@ -87,10 +92,7 @@ fn intersectAABB(ray: Ray, bvhNode: BvhNode) -> f32 {
     let tNear = max(max(tmin.x, tmin.y), tmin.z);
     let tFar = min(min(tmax.x, tmax.y), tmax.z);
     
-    if (tNear <= tFar && tFar > 0.0) {
-        return tNear;
-    }
-    return 1e30;
+    return select(1e30, tNear, tNear <= tFar && tFar > 0.0);
 }
 
 fn intersectTriangle(ray: Ray, triIndex: u32) -> HitRecord {
@@ -98,8 +100,8 @@ fn intersectTriangle(ray: Ray, triIndex: u32) -> HitRecord {
     rec.t = -1.0;
     
     let tri = triangles[triIndex];
-    let edge1 = tri.v1 - tri.v0;
-    let edge2 = tri.v2 - tri.v0;
+    let edge1 = tri.edge1;
+    let edge2 = tri.edge2;
     let h = cross(ray.dir, edge2);
     let a = dot(edge1, h);
     if (a > -0.0001 && a < 0.0001) {
@@ -251,17 +253,19 @@ fn bvhIntersectShadow(ray: Ray, maxDist: f32) -> bool {
     return false;
 }
 
-// PCG random number generator
-fn rand_pcg(seed: ptr<function, u32>) -> f32 {
-    let state = *seed;
-    *seed = state * 747796405u + 2891336453u;
-    let word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
-    return f32((word >> 22u) ^ word) / 4294967295.0;
+// XorShift32 random number generator (ultra-fast)
+fn rand_xorshift(seed: ptr<function, u32>) -> f32 {
+    var x = *seed;
+    x ^= x << 13u;
+    x ^= x >> 17u;
+    x ^= x << 5u;
+    *seed = x;
+    return f32(x) * 2.3283064365386963e-10; // 1 / 4294967296.0
 }
 
 fn randomHemisphereDir(normal: vec3<f32>, seed: ptr<function, u32>) -> vec3<f32> {
-    let r1 = rand_pcg(seed);
-    let r2 = rand_pcg(seed);
+    let r1 = rand_xorshift(seed);
+    let r2 = rand_xorshift(seed);
     
     let phi = 2.0 * 3.1415926535 * r1;
     let r = sqrt(r2);
@@ -278,7 +282,7 @@ fn randomHemisphereDir(normal: vec3<f32>, seed: ptr<function, u32>) -> vec3<f32>
     return u * x + v * y + w * z;
 }
 
-@compute @workgroup_size(16, 16)
+@compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
     let dimensions = textureDimensions(historyTexWrite);
     if (GlobalInvocationID.x >= dimensions.x || GlobalInvocationID.y >= dimensions.y) {
@@ -286,9 +290,10 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
     }
     let pixelCoords = vec2<i32>(GlobalInvocationID.xy);
     
-    var seed = GlobalInvocationID.x + GlobalInvocationID.y * dimensions.x + camera.frameCounter * dimensions.x * dimensions.y;
-    
-    let jitter = vec2<f32>(rand_pcg(&seed) - 0.5, rand_pcg(&seed) - 0.5);
+    var seed = u32(GlobalInvocationID.x * 1973u + GlobalInvocationID.y * 9277u + camera.frameCounter * 26699u) | 1u;
+    let jitterX = rand_xorshift(&seed) - 0.5;
+    let jitterY = rand_xorshift(&seed) - 0.5;
+    let jitter = vec2<f32>(jitterX, jitterY);
     let pixelCenter = vec2<f32>(pixelCoords) + vec2<f32>(0.5, 0.5);
     let uv = (pixelCenter + jitter) / vec2<f32>(dimensions) * 2.0 - 1.0;
     
@@ -302,7 +307,7 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
     var throughput = vec3<f32>(1.0);
     var firstHitT = 1e30;
     
-    for (var bounce = 0; bounce < 2; bounce += 1) {
+    for (var bounce = 0; bounce < i32(camera.maxBounces); bounce += 1) {
         let rec = bvhIntersect(ray);
         
         if (bounce == 0) {
@@ -314,7 +319,7 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
         var scatteredInFog = false;
         
         if (camera.volumetricsEnabled == 1u) {
-            let scatterDist = -log(max(0.0001, rand_pcg(&seed))) / camera.fogDensity;
+            let scatterDist = -log(max(0.0001, rand_xorshift(&seed))) / camera.fogDensity;
             if (scatterDist < rec.t) {
                 hitDist = scatterDist;
                 scatteredInFog = true;
@@ -332,18 +337,18 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
                 
                 // Volumetric NEE (Next Event Estimation)
                 if (camera.numLights > 0u) {
-                    let lightIdxStr = min(u32(rand_pcg(&seed) * f32(camera.numLights)), camera.numLights - 1u);
+                    let lightIdxStr = min(u32(rand_xorshift(&seed) * f32(camera.numLights)), camera.numLights - 1u);
                     let lightTriIdx = lightIndices[lightIdxStr];
                     let lightTri = triangles[lightTriIdx];
                     
-                    let r1 = rand_pcg(&seed);
-                    let r2 = rand_pcg(&seed);
+                    let r1 = rand_xorshift(&seed);
+                    let r2 = rand_xorshift(&seed);
                     let sqrt_r1 = sqrt(r1);
                     let u_light = 1.0 - sqrt_r1;
                     let v_light = r2 * sqrt_r1;
                     let w_light = 1.0 - u_light - v_light;
                     
-                    let lightPoint = lightTri.v0 * u_light + lightTri.v1 * v_light + lightTri.v2 * w_light;
+                    let lightPoint = lightTri.v0 + lightTri.edge1 * v_light + lightTri.edge2 * w_light;
                     let lightDirUnnorm = lightPoint - hitPoint;
                     let lightDist = length(lightDirUnnorm);
                     let lightDir = lightDirUnnorm / lightDist;
@@ -357,8 +362,8 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
                         shadowRay.invDir = 1.0 / lightDir;
                         
                         if (!bvhIntersectShadow(shadowRay, lightDist - 0.01)) {
-                            let edge1 = lightTri.v1 - lightTri.v0;
-                            let edge2 = lightTri.v2 - lightTri.v0;
+                            let edge1 = lightTri.edge1;
+                            let edge2 = lightTri.edge2;
                             let lightArea = length(cross(edge1, edge2)) * 0.5;
                             
                             let solidAngle = (lightArea * cosLight) / (lightDist * lightDist);
@@ -437,19 +442,19 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
             // Next Event Estimation (Explicit Light Sampling)
             if (camera.numLights > 0u) {
                 // Pick a random light
-                let lightIdxStr = min(u32(rand_pcg(&seed) * f32(camera.numLights)), camera.numLights - 1u);
+                let lightIdxStr = min(u32(rand_xorshift(&seed) * f32(camera.numLights)), camera.numLights - 1u);
                 let lightTriIdx = lightIndices[lightIdxStr];
                 let lightTri = triangles[lightTriIdx];
                 
                 // Pick a random point on the light triangle
-                let r1 = rand_pcg(&seed);
-                let r2 = rand_pcg(&seed);
+                let r1 = rand_xorshift(&seed);
+                let r2 = rand_xorshift(&seed);
                 let sqrt_r1 = sqrt(r1);
                 let u_light = 1.0 - sqrt_r1;
                 let v_light = r2 * sqrt_r1;
                 let w_light = 1.0 - u_light - v_light;
                 
-                let lightPoint = lightTri.v0 * u_light + lightTri.v1 * v_light + lightTri.v2 * w_light;
+                let lightPoint = lightTri.v0 + lightTri.edge1 * v_light + lightTri.edge2 * w_light;
                 let lightDirUnnorm = lightPoint - hitPoint;
                 let lightDist = length(lightDirUnnorm);
                 let lightDir = lightDirUnnorm / lightDist;
@@ -464,11 +469,9 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
                     shadowRay.dir = lightDir;
                     shadowRay.invDir = 1.0 / lightDir;
                     
-                    let shadowRec = bvhIntersect(shadowRay);
-                    // If we didn't hit anything closer than the light (allow small epsilon)
-                    if (shadowRec.t >= lightDist - 0.01) {
-                        let edge1 = lightTri.v1 - lightTri.v0;
-                        let edge2 = lightTri.v2 - lightTri.v0;
+                    if (!bvhIntersectShadow(shadowRay, lightDist - 0.01)) {
+                        let edge1 = lightTri.edge1;
+                        let edge2 = lightTri.edge2;
                         let lightArea = length(cross(edge1, edge2)) * 0.5;
                         
                         // Solid angle = area * cos(theta) / r^2
@@ -520,7 +523,7 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
             // Russian Roulette
             let p = max(throughput.r, max(throughput.g, throughput.b));
             if (bounce > 0) {
-                if (p < 0.001 || rand_pcg(&seed) > p) {
+                if (p < 0.001 || rand_xorshift(&seed) > p) {
                     break;
                 }
                 throughput /= p;
@@ -537,6 +540,13 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
         }
     }
     
+    // Read light trace contribution from splat buffer
+    let pixIdx = u32(pixelCoords.y) * dimensions.x + u32(pixelCoords.x);
+    let ltR = f32(atomicLoad(&splatBuffer[pixIdx * 3u])) / 4096.0;
+    let ltG = f32(atomicLoad(&splatBuffer[pixIdx * 3u + 1u])) / 4096.0;
+    let ltB = f32(atomicLoad(&splatBuffer[pixIdx * 3u + 2u])) / 4096.0;
+    color += vec3(ltR, ltG, ltB);
+    
     let isMoving = distance(camera.pos, camera.prevPos) > 0.001 || distance(camera.dir, camera.prevDir) > 0.001;
     
     // Reprojection
@@ -550,7 +560,7 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
         // Calculate world-space position of the first hit (or far plane for sky)
         var worldPos = ray.origin + ray.dir * 1000.0;
         if (firstHitT < 1e29) {
-            worldPos = camera.pos + normalize(camera.dir + camera.right * uv.x * aspect - camera.up * uv.y) * firstHitT;
+            worldPos = camera.pos + ray.dir * firstHitT;
         }
         
         // Project into previous frame
@@ -582,4 +592,135 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
     if (any(accumColor != accumColor)) { accumColor = vec3(0.0); }
     
     textureStore(historyTexWrite, pixelCoords, vec4<f32>(accumColor, 1.0));
+}
+
+// ============================================================
+// Light Tracing Pass — traces rays FROM lights TO the camera
+// ============================================================
+@compute @workgroup_size(8, 8)
+fn lightTrace(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let dimensions = textureDimensions(historyTexWrite);
+    if (gid.x >= dimensions.x || gid.y >= dimensions.y) {
+        return;
+    }
+    if (camera.numLights == 0u) {
+        return;
+    }
+    
+    var seed = u32(gid.x * 6971u + gid.y * 31337u + camera.frameCounter * 48611u) | 1u;
+    
+    // 1. Pick a random light triangle
+    let lightIdx = min(u32(rand_xorshift(&seed) * f32(camera.numLights)), camera.numLights - 1u);
+    let lightTriIdx = lightIndices[lightIdx];
+    let lightTri = triangles[lightTriIdx];
+    
+    // 2. Pick a random point on the light
+    let r1 = rand_xorshift(&seed);
+    let r2 = rand_xorshift(&seed);
+    let sqrt_r1 = sqrt(r1);
+    let u_l = 1.0 - sqrt_r1;
+    let v_l = r2 * sqrt_r1;
+    
+    let lightOrigin = lightTri.v0 + lightTri.edge1 * u_l + lightTri.edge2 * v_l;
+    let lightNormal = lightTri.normal;
+    
+    // 3. Compute light emission radiance
+    let lightMat = materials[lightTri.materialIndex];
+    let lightUV = (1.0 - u_l - v_l) * lightTri.uv0 + u_l * lightTri.uv1 + v_l * lightTri.uv2;
+    let lSU = lightMat.u + fract(lightUV.x / lightMat.width) * lightMat.w;
+    let lSV = lightMat.v + fract(lightUV.y / lightMat.height) * lightMat.h;
+    let lightTexColor = textureSampleLevel(atlasTex, atlasSamp, vec2<f32>(lSU, lSV), 0.0).rgb;
+    let lightArea = length(cross(lightTri.edge1, lightTri.edge2)) * 0.5;
+    var lightRadiance = lightTexColor * lightTri.emissivity * f32(camera.numLights);
+    
+    // 4. Emit ray in cosine-weighted hemisphere from light surface
+    let emitDir = randomHemisphereDir(lightNormal, &seed);
+    var ray: Ray;
+    ray.origin = lightOrigin + lightNormal * 0.01;
+    ray.dir = emitDir;
+    ray.invDir = 1.0 / ray.dir;
+    
+    // Carry the full emitted power: radiance * area * pi (Lambertian emitter)
+    // Divided by PDF of choosing this light (1/numLights) and point on light (1/area)
+    // and cosine-weighted hemisphere PDF (cos/pi), giving: radiance * pi * cos_emit
+    // But cosine-weighted sampling already includes cos/pi, so throughput = radiance * area * pi
+    var throughput = lightRadiance * lightArea * 3.14159;
+    
+    // 5. Trace into scene (1 bounce)
+    let rec = bvhIntersect(ray);
+    if (rec.t >= 1e29) {
+        return; // Missed everything
+    }
+    
+    let hitPoint = ray.origin + ray.dir * rec.t;
+    var hitNormal = normalize(rec.normal);
+    if (dot(hitNormal, ray.dir) > 0.0) {
+        hitNormal = -hitNormal;
+    }
+    
+    // Get surface albedo at hit point
+    let hitTri = triangles[rec.triIndex];
+    let hitMat = materials[hitTri.materialIndex];
+    let hitUV = (1.0 - rec.u - rec.v) * hitTri.uv0 + rec.u * hitTri.uv1 + rec.v * hitTri.uv2;
+    let hSU = hitMat.u + fract(hitUV.x / hitMat.width) * hitMat.w;
+    let hSV = hitMat.v + fract(hitUV.y / hitMat.height) * hitMat.h;
+    let surfaceAlbedo = textureSampleLevel(atlasTex, atlasSamp, vec2<f32>(hSU, hSV), 0.0).rgb;
+    
+    // Apply Lambertian BRDF: albedo / pi
+    throughput *= surfaceAlbedo / 3.14159;
+    
+    // 6. Project hit point into camera screen space
+    let toHit = hitPoint - camera.pos;
+    let camDist = dot(toHit, camera.dir);
+    if (camDist < 0.1) {
+        return; // Behind camera
+    }
+    
+    let screenX = dot(toHit, camera.right) / (camera.aspect * camDist);
+    let screenY = dot(toHit, camera.up) / camDist;
+    
+    if (screenX < -1.0 || screenX > 1.0 || screenY < -1.0 || screenY > 1.0) {
+        return; // Off screen
+    }
+    
+    // 7. Shadow test from hit point back to camera
+    let toCam = camera.pos - hitPoint;
+    let toCamDist = length(toCam);
+    let toCamDir = toCam / toCamDist;
+    
+    let cosSurface = dot(hitNormal, toCamDir);
+    if (cosSurface <= 0.0) {
+        return; // Surface facing away from camera
+    }
+    
+    var shadowRay: Ray;
+    shadowRay.origin = hitPoint + hitNormal * 0.01;
+    shadowRay.dir = toCamDir;
+    shadowRay.invDir = 1.0 / toCamDir;
+    
+    if (bvhIntersectShadow(shadowRay, toCamDist - 0.1)) {
+        return; // Occluded
+    }
+    
+    // 8. Compute final contribution
+    // Geometry term: cos(surface->camera) / distance^2
+    let geometryTerm = cosSurface / (toCamDist * toCamDist);
+    let contribution = throughput * geometryTerm;
+    
+    // Normalize: each thread fires 1 photon. Scale to match camera-side radiance.
+    let scaledContrib = contribution * 0.5;
+    
+    // 9. Convert screen coords to pixel coords and splat
+    let pixX = u32(clamp((screenX * 0.5 + 0.5) * f32(dimensions.x), 0.0, f32(dimensions.x - 1u)));
+    let pixY = u32(clamp((-screenY * 0.5 + 0.5) * f32(dimensions.y), 0.0, f32(dimensions.y - 1u)));
+    let pixIdx = pixY * dimensions.x + pixX;
+    
+    // Encode as fixed-point and atomicAdd
+    let rVal = u32(clamp(scaledContrib.r * 4096.0, 0.0, 16777215.0));
+    let gVal = u32(clamp(scaledContrib.g * 4096.0, 0.0, 16777215.0));
+    let bVal = u32(clamp(scaledContrib.b * 4096.0, 0.0, 16777215.0));
+    
+    atomicAdd(&splatBuffer[pixIdx * 3u], rVal);
+    atomicAdd(&splatBuffer[pixIdx * 3u + 1u], gVal);
+    atomicAdd(&splatBuffer[pixIdx * 3u + 2u], bVal);
 }
