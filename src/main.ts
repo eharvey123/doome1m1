@@ -64,8 +64,10 @@ async function init() {
           <label>Max Bounces: <span id="bounceVal">2</span></label><br>
           <input type="range" id="bounceSlider" min="1" max="8" step="1" value="2" style="width: 100%;">
         </div>
-        <div style="margin-top: 15px; text-align: center;">
-          <button id="saveConfigBtn" style="width: 100%; padding: 8px; background: #555; color: white; border: none; border-radius: 4px; cursor: pointer;">Save Config</button>
+        <div style="margin-top: 15px; text-align: center; display: flex; flex-direction: column; gap: 8px;">
+          <button id="saveConfigBtn" style="padding: 8px; background: #2e7d32; color: white; border: none; border-radius: 4px; cursor: pointer;">Save Overrides</button>
+          <button id="exportConfigBtn" style="padding: 8px; background: #1565c0; color: white; border: none; border-radius: 4px; cursor: pointer;">Export Default Config</button>
+          <button id="resetConfigBtn" style="padding: 8px; background: #c62828; color: white; border: none; border-radius: 4px; cursor: pointer;">Reset to Defaults</button>
           <span id="saveStatus" style="color: #0f0; display: none; font-size: 0.8em; margin-top: 5px;">Config Saved!</span>
         </div>
       </div>
@@ -109,19 +111,39 @@ async function init() {
     
     const renderer = new WebGpuRenderer(canvas);
 
-    // Load config from localStorage
-    const savedConfigStr = localStorage.getItem('doom_config');
+    // Load config from deployment defaults, then apply localStorage overrides
     let savedConfig: any = null;
-    if (savedConfigStr) {
+    
+    try {
+      const defaultRes = await fetch(import.meta.env.BASE_URL + 'default_config.json');
+      if (defaultRes.ok) {
+        savedConfig = await defaultRes.json();
+      }
+    } catch (e) {
+      console.log('No default_config.json found, skipping defaults.');
+    }
+
+    const localConfigStr = localStorage.getItem('doom_config');
+    if (localConfigStr) {
       try {
-        savedConfig = JSON.parse(savedConfigStr);
-        if (savedConfig.paintedSurfaces) {
-          const mapData = new Map(savedConfig.paintedSurfaces as [string, { intensity: number, fwhm: number }][]);
-          renderer.paintedSurfaces = mapData;
+        const localConfig = JSON.parse(localConfigStr);
+        if (savedConfig) {
+          savedConfig = {
+            ...savedConfig,
+            ...localConfig,
+            sliders: { ...(savedConfig.sliders || {}), ...(localConfig.sliders || {}) }
+          };
+        } else {
+          savedConfig = localConfig;
         }
       } catch (e) {
-        console.error('Failed to parse saved config', e);
+        console.error('Failed to parse local config', e);
       }
+    }
+
+    if (savedConfig && savedConfig.paintedSurfaces) {
+      const parsedMap = new Map(savedConfig.paintedSurfaces as [string, { intensity: number, fwhm: number }][]);
+      renderer.paintedSurfaces = parsedMap;
     }
 
     await renderer.init(orderedTriangles, nodes, mapData, materials, atlasBuilder);
@@ -158,6 +180,8 @@ async function init() {
     const bounceVal = document.querySelector<HTMLElement>('#bounceVal')!;
 
     const saveConfigBtn = document.querySelector<HTMLButtonElement>('#saveConfigBtn')!;
+    const exportConfigBtn = document.querySelector<HTMLButtonElement>('#exportConfigBtn')!;
+    const resetConfigBtn = document.querySelector<HTMLButtonElement>('#resetConfigBtn')!;
     const saveStatus = document.querySelector<HTMLElement>('#saveStatus')!;
 
     // Apply loaded UI values
@@ -267,6 +291,42 @@ async function init() {
       setTimeout(() => {
         saveStatus.style.display = 'none';
       }, 2000);
+    });
+
+    exportConfigBtn.addEventListener('click', () => {
+      const config = {
+        sliders: {
+          intensity: intensitySlider.value,
+          fwhm: fwhmSlider.value,
+          scale: scaleSlider.value,
+          ambient: ambientSlider.value,
+          sky: skySlider.value,
+          azimuth: azimuthSlider.value,
+          elevation: elevationSlider.value,
+          smear: smearSlider.value,
+          volumetric: volumetricToggle.checked,
+          fog: fogSlider.value,
+          bounces: bounceSlider.value
+        },
+        paintedSurfaces: Array.from(renderer.paintedSurfaces.entries())
+      };
+      
+      const blob = new Blob([JSON.stringify(config, null, 2)], {type: "application/json"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = "default_config.json";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+
+    resetConfigBtn.addEventListener('click', () => {
+      if (confirm("Are you sure you want to reset to deployment defaults? This will clear your personal overrides.")) {
+        localStorage.removeItem('doom_config');
+        location.reload();
+      }
     });
 
     window.addEventListener('mousedown', e => {

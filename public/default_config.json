@@ -1,0 +1,38 @@
+{
+  "sliders": {
+    "intensity": "3.5",
+    "fwhm": "180",
+    "scale": "0.4",
+    "ambient": "0.05",
+    "sky": "1",
+    "azimuth": "45",
+    "elevation": "45",
+    "smear": "0.12",
+    "volumetric": false,
+    "fog": "0.002",
+    "bounces": "2"
+  },
+  "paintedSurfaces": [
+    [
+      "sector_39_floor_tri_24",
+      {
+        "intensity": 5,
+        "fwhm": 180
+      }
+    ],
+    [
+      "sector_39_floor_tri_6",
+      {
+        "intensity": 5,
+        "fwhm": 180
+      }
+    ],
+    [
+      "sector_39_floor_tri_15",
+      {
+        "intensity": 5,
+        "fwhm": 180
+      }
+    ]
+  ]
+}
