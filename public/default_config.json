@@ -1,0 +1,1066 @@
+{
+  "sliders": {
+    "intensity": "0",
+    "fwhm": "180",
+    "spec": "0",
+    "scale": "0.3",
+    "ambient": "0.08",
+    "sky": "2.3",
+    "azimuth": "22",
+    "elevation": "23",
+    "smear": "0",
+    "volumetric": false,
+    "fog": "0.002",
+    "bounces": "2"
+  },
+  "paintedSurfaces": [
+    [
+      "linedef_54_upper_front_tri_0",
+      {
+        "intensity": 1,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_54_upper_front_tri_1",
+      {
+        "intensity": 1,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_53_upper_front_tri_0",
+      {
+        "intensity": 1,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_53_upper_front_tri_1",
+      {
+        "intensity": 1,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_39_upper_front_tri_1",
+      {
+        "intensity": 1,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_39_upper_front_tri_0",
+      {
+        "intensity": 1,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_1_mid_tri_1",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_1_mid_tri_0",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_2_mid_tri_1",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_2_mid_tri_0",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_45_ceil_tri_0",
+      {
+        "intensity": 4.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_45_ceil_tri_3",
+      {
+        "intensity": 4.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_44_ceil_tri_3",
+      {
+        "intensity": 4.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_44_ceil_tri_0",
+      {
+        "intensity": 4.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_32_floor_tri_15",
+      {
+        "intensity": 4.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_32_floor_tri_12",
+      {
+        "intensity": 4.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_32_floor_tri_3",
+      {
+        "intensity": 4.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_32_floor_tri_0",
+      {
+        "intensity": 4.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_32_floor_tri_6",
+      {
+        "intensity": 4.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_32_floor_tri_9",
+      {
+        "intensity": 4.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_61_mid_tri_0",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_61_mid_tri_1",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_62_mid_tri_0",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_62_mid_tri_1",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_134_mid_tri_0",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_134_mid_tri_1",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_135_mid_tri_0",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_135_mid_tri_1",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_96_mid_tri_1",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_96_mid_tri_0",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_99_mid_tri_0",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_99_mid_tri_1",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_3_ceil_tri_0",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_3_ceil_tri_3",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_12_ceil_tri_0",
+      {
+        "intensity": 1.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_12_ceil_tri_3",
+      {
+        "intensity": 1.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_10_ceil_tri_0",
+      {
+        "intensity": 1.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_10_ceil_tri_3",
+      {
+        "intensity": 1.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_52_ceil_tri_3",
+      {
+        "intensity": 1.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_51_ceil_tri_3",
+      {
+        "intensity": 1.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_51_ceil_tri_0",
+      {
+        "intensity": 1.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_8_ceil_tri_0",
+      {
+        "intensity": 1.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_8_ceil_tri_3",
+      {
+        "intensity": 1.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_52_ceil_tri_0",
+      {
+        "intensity": 1.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_366_mid_tri_1",
+      {
+        "intensity": 1.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_366_mid_tri_0",
+      {
+        "intensity": 1,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_370_mid_tri_1",
+      {
+        "intensity": 1,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_370_mid_tri_0",
+      {
+        "intensity": 1,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_360_mid_tri_0",
+      {
+        "intensity": 1,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_360_mid_tri_1",
+      {
+        "intensity": 1,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_376_mid_tri_1",
+      {
+        "intensity": 1,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_376_mid_tri_0",
+      {
+        "intensity": 1,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_375_mid_tri_0",
+      {
+        "intensity": 1,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_375_mid_tri_1",
+      {
+        "intensity": 1,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_362_mid_tri_0",
+      {
+        "intensity": 1,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_362_mid_tri_1",
+      {
+        "intensity": 1,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_369_mid_tri_0",
+      {
+        "intensity": 1,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_369_mid_tri_1",
+      {
+        "intensity": 1,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_368_mid_tri_1",
+      {
+        "intensity": 1,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_368_mid_tri_0",
+      {
+        "intensity": 1,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_364_mid_tri_0",
+      {
+        "intensity": 1,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_364_mid_tri_1",
+      {
+        "intensity": 1,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_365_mid_tri_0",
+      {
+        "intensity": 1,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_365_mid_tri_1",
+      {
+        "intensity": 1,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_62_ceil_tri_33",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_62_ceil_tri_24",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_72_ceil_tri_27",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_72_ceil_tri_21",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_72_ceil_tri_15",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_72_ceil_tri_9",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_72_ceil_tri_3",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_72_ceil_tri_12",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_72_ceil_tri_18",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_72_ceil_tri_24",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_72_ceil_tri_0",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_72_ceil_tri_6",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_307_mid_tri_0",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_307_mid_tri_1",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_306_mid_tri_1",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_306_mid_tri_0",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_342_upper_front_tri_0",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_57_floor_tri_21",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0.35
+      }
+    ],
+    [
+      "sector_57_floor_tri_12",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0.35
+      }
+    ],
+    [
+      "sector_57_floor_tri_0",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0.35
+      }
+    ],
+    [
+      "sector_57_floor_tri_18",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0.35
+      }
+    ],
+    [
+      "sector_57_floor_tri_24",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0.35
+      }
+    ],
+    [
+      "sector_57_floor_tri_9",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0.35
+      }
+    ],
+    [
+      "sector_57_floor_tri_15",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0.35
+      }
+    ],
+    [
+      "sector_57_floor_tri_3",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0.35
+      }
+    ],
+    [
+      "linedef_202_lower_front_tri_0",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0.35
+      }
+    ],
+    [
+      "sector_57_floor_tri_6",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0.35
+      }
+    ],
+    [
+      "sector_61_floor_tri_0",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0.35
+      }
+    ],
+    [
+      "sector_61_floor_tri_6",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0.35
+      }
+    ],
+    [
+      "sector_55_floor_tri_0",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0.35
+      }
+    ],
+    [
+      "sector_61_floor_tri_12",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0.35
+      }
+    ],
+    [
+      "sector_61_floor_tri_3",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0.35
+      }
+    ],
+    [
+      "sector_61_floor_tri_9",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0.35
+      }
+    ],
+    [
+      "sector_13_floor_tri_15",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0.35
+      }
+    ],
+    [
+      "sector_13_floor_tri_12",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0.35
+      }
+    ],
+    [
+      "sector_13_floor_tri_3",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0.35
+      }
+    ],
+    [
+      "sector_13_floor_tri_6",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0.35
+      }
+    ],
+    [
+      "sector_13_floor_tri_9",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0.35
+      }
+    ],
+    [
+      "linedef_255_mid_tri_0",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_255_mid_tri_1",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_258_mid_tri_0",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_258_mid_tri_1",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_445_mid_tri_0",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_445_mid_tri_1",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_443_mid_tri_1",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_443_mid_tri_0",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_442_mid_tri_0",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_442_mid_tri_1",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_440_mid_tri_1",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_440_mid_tri_0",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "linedef_444_mid_tri_0",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_77_ceil_tri_9",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_77_ceil_tri_12",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_77_ceil_tri_15",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_77_ceil_tri_6",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_77_ceil_tri_0",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_77_ceil_tri_3",
+      {
+        "intensity": 0.5,
+        "fwhm": 180,
+        "specularity": 0
+      }
+    ],
+    [
+      "sector_39_floor_tri_6",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0.4
+      }
+    ],
+    [
+      "sector_39_floor_tri_24",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0.4
+      }
+    ],
+    [
+      "sector_39_floor_tri_15",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0.4
+      }
+    ],
+    [
+      "sector_39_floor_tri_27",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0.4
+      }
+    ],
+    [
+      "sector_39_floor_tri_12",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0.4
+      }
+    ],
+    [
+      "sector_39_floor_tri_3",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0.4
+      }
+    ],
+    [
+      "sector_39_floor_tri_21",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0.4
+      }
+    ],
+    [
+      "sector_39_floor_tri_18",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0.4
+      }
+    ],
+    [
+      "sector_39_floor_tri_0",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0.4
+      }
+    ],
+    [
+      "sector_39_floor_tri_9",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0.4
+      }
+    ]
+  ]
+}
