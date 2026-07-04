@@ -8,7 +8,7 @@ import { WebGpuRenderer } from './WebGpuRenderer.ts';
 async function init() {
   const app = document.querySelector<HTMLDivElement>('#app')!;
   app.innerHTML = `
-    <div id="ui" style="position: absolute; top: 10px; left: 10px; z-index: 10; background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px; max-width: 350px; color: white;">
+    <div id="ui" style="position: absolute; top: 10px; left: 10px; z-index: 10; background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px; max-width: 350px; color: white; max-height: 95vh; overflow-y: auto;">
       <h2 style="margin-top: 0;">WebGPU Doom Path Tracer</h2>
       <p id="status">Loading DOOM1.WAD...</p>
       <p style="font-size: 0.9em; color: #ccc;">Click on the canvas to lock pointer. Use WASD to move. Press '~' to toggle settings.</p>
@@ -64,6 +64,10 @@ async function init() {
           <label>Max Bounces: <span id="bounceVal">2</span></label><br>
           <input type="range" id="bounceSlider" min="1" max="8" step="1" value="2" style="width: 100%;">
         </div>
+        <div style="margin-top: 15px; text-align: center;">
+          <button id="saveConfigBtn" style="width: 100%; padding: 8px; background: #555; color: white; border: none; border-radius: 4px; cursor: pointer;">Save Config</button>
+          <span id="saveStatus" style="color: #0f0; display: none; font-size: 0.8em; margin-top: 5px;">Config Saved!</span>
+        </div>
       </div>
     </div>
     <div style="position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; overflow: hidden; z-index: 1; background: black;">
@@ -100,11 +104,26 @@ async function init() {
     document.querySelector<HTMLParagraphElement>('#status')!.innerText = "Initializing WebGPU...";
 
     const canvas = document.querySelector<HTMLCanvasElement>('#glcanvas')!;
-    // Set internal resolution to match the physical pixels of the display
     canvas.width = Math.floor(window.innerWidth * window.devicePixelRatio);
     canvas.height = Math.floor(window.innerHeight * window.devicePixelRatio);
     
     const renderer = new WebGpuRenderer(canvas);
+
+    // Load config from localStorage
+    const savedConfigStr = localStorage.getItem('doom_config');
+    let savedConfig: any = null;
+    if (savedConfigStr) {
+      try {
+        savedConfig = JSON.parse(savedConfigStr);
+        if (savedConfig.paintedSurfaces) {
+          const mapData = new Map(savedConfig.paintedSurfaces as [string, { intensity: number, fwhm: number }][]);
+          renderer.paintedSurfaces = mapData;
+        }
+      } catch (e) {
+        console.error('Failed to parse saved config', e);
+      }
+    }
+
     await renderer.init(orderedTriangles, nodes, mapData, materials, atlasBuilder);
 
     document.querySelector<HTMLParagraphElement>('#status')!.innerText = "Ready!";
@@ -137,6 +156,46 @@ async function init() {
     const elevationVal = document.querySelector<HTMLElement>('#elevationVal')!;
     const bounceSlider = document.querySelector<HTMLInputElement>('#bounceSlider')!;
     const bounceVal = document.querySelector<HTMLElement>('#bounceVal')!;
+
+    const saveConfigBtn = document.querySelector<HTMLButtonElement>('#saveConfigBtn')!;
+    const saveStatus = document.querySelector<HTMLElement>('#saveStatus')!;
+
+    // Apply loaded UI values
+    if (savedConfig && savedConfig.sliders) {
+      const s = savedConfig.sliders;
+      if (s.intensity !== undefined) intensitySlider.value = s.intensity;
+      if (s.fwhm !== undefined) fwhmSlider.value = s.fwhm;
+      if (s.scale !== undefined) scaleSlider.value = s.scale;
+      if (s.ambient !== undefined) ambientSlider.value = s.ambient;
+      if (s.sky !== undefined) skySlider.value = s.sky;
+      if (s.azimuth !== undefined) azimuthSlider.value = s.azimuth;
+      if (s.elevation !== undefined) elevationSlider.value = s.elevation;
+      if (s.smear !== undefined) smearSlider.value = s.smear;
+      if (s.volumetric !== undefined) volumetricToggle.checked = s.volumetric;
+      if (s.fog !== undefined) fogSlider.value = s.fog;
+      if (s.bounces !== undefined) bounceSlider.value = s.bounces;
+    }
+
+    // Initialize UI display text & Renderer State
+    intensityVal.innerText = intensitySlider.value;
+    fwhmVal.innerText = fwhmSlider.value;
+    scaleVal.innerText = scaleSlider.value;
+    ambientVal.innerText = ambientSlider.value;
+    skyVal.innerText = skySlider.value;
+    azimuthVal.innerText = azimuthSlider.value;
+    elevationVal.innerText = elevationSlider.value;
+    smearVal.innerText = smearSlider.value;
+    fogVal.innerText = fogSlider.value;
+    bounceVal.innerText = bounceSlider.value;
+
+    renderer.renderScale = parseFloat(scaleSlider.value);
+    renderer.ambientLight = parseFloat(ambientSlider.value);
+    renderer.skyLight = parseFloat(skySlider.value);
+    renderer.setSunAngle(parseFloat(azimuthSlider.value), parseFloat(elevationSlider.value));
+    renderer.temporalBlend = 1.0 - (parseFloat(smearSlider.value) * 0.99);
+    renderer.volumetricsEnabled = volumetricToggle.checked;
+    renderer.fogDensity = parseFloat(fogSlider.value);
+    renderer.maxBounces = parseInt(bounceSlider.value);
 
     paintToggle.addEventListener('change', () => {
       crosshair.style.display = paintToggle.checked ? 'block' : 'none';
@@ -182,6 +241,32 @@ async function init() {
     bounceSlider.addEventListener('input', () => {
       bounceVal.innerText = bounceSlider.value;
       renderer.maxBounces = parseInt(bounceSlider.value);
+    });
+
+    saveConfigBtn.addEventListener('click', () => {
+      const config = {
+        sliders: {
+          intensity: intensitySlider.value,
+          fwhm: fwhmSlider.value,
+          scale: scaleSlider.value,
+          ambient: ambientSlider.value,
+          sky: skySlider.value,
+          azimuth: azimuthSlider.value,
+          elevation: elevationSlider.value,
+          smear: smearSlider.value,
+          volumetric: volumetricToggle.checked,
+          fog: fogSlider.value,
+          bounces: bounceSlider.value
+        },
+        paintedSurfaces: Array.from(renderer.paintedSurfaces.entries())
+      };
+      
+      localStorage.setItem('doom_config', JSON.stringify(config));
+      
+      saveStatus.style.display = 'block';
+      setTimeout(() => {
+        saveStatus.style.display = 'none';
+      }, 2000);
     });
 
     window.addEventListener('mousedown', e => {

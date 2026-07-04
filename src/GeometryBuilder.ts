@@ -13,6 +13,7 @@ export interface Triangle {
   uv2: [number, number];
   emissivity: number;
   emissionExp: number;
+  polygonId: string;
 }
 
 export interface MaterialDef {
@@ -57,7 +58,8 @@ export class GeometryBuilder {
     v1: [number, number, number], uv1: [number, number],
     v2: [number, number, number], uv2: [number, number],
     v3: [number, number, number], uv3: [number, number],
-    materialIndex: number
+    materialIndex: number,
+    baseId: string
   ) {
     // Normal calculation from v0, v1, v2
     const ax = v1[0] - v0[0];
@@ -78,12 +80,13 @@ export class GeometryBuilder {
 
     const normal: [number, number, number] = [nx, ny, nz];
 
-    this.triangles.push({ v0, v1, v2, normal, materialIndex, uv0, uv1, uv2, emissivity: 0.0, emissionExp: 0.0 });
-    this.triangles.push({ v0, v1: v2, v2: v3, normal, materialIndex, uv0, uv1: uv2, uv2: uv3, emissivity: 0.0, emissionExp: 0.0 });
+    this.triangles.push({ v0, v1, v2, normal, materialIndex, uv0, uv1, uv2, emissivity: 0.0, emissionExp: 0.0, polygonId: `${baseId}_tri_0` });
+    this.triangles.push({ v0, v1: v2, v2: v3, normal, materialIndex, uv0, uv1: uv2, uv2: uv3, emissivity: 0.0, emissionExp: 0.0, polygonId: `${baseId}_tri_1` });
   }
 
   private buildWalls() {
-    for (const linedef of this.map.linedefs) {
+    for (let i = 0; i < this.map.linedefs.length; i++) {
+      const linedef = this.map.linedefs[i];
       const v1 = this.map.vertexes[linedef.v1];
       const v2 = this.map.vertexes[linedef.v2];
       const length = Math.hypot(v2.x - v1.x, v2.y - v1.y);
@@ -108,7 +111,8 @@ export class GeometryBuilder {
           [v2.x, yBot, v2.y], [u1, v1_uv],
           [v2.x, yTop, v2.y], [u1, v0],
           [v1.x, yTop, v1.y], [u0, v0],
-          midMat
+          midMat,
+          `linedef_${i}_mid`
         );
       } else if (rightSide && leftSide) {
         // Portal
@@ -122,7 +126,6 @@ export class GeometryBuilder {
           const yBot = frontSec.floorheight;
           const u0 = rightSide.textureoffset;
           const u1 = rightSide.textureoffset + length;
-          // Unpegged logic varies, but simple alignment:
           const v0 = rightSide.rowoffset;
           const v1_uv = rightSide.rowoffset + (yTop - yBot);
           
@@ -131,7 +134,8 @@ export class GeometryBuilder {
             [v2.x, yBot, v2.y], [u1, v1_uv],
             [v2.x, yTop, v2.y], [u1, v0],
             [v1.x, yTop, v1.y], [u0, v0],
-            mat
+            mat,
+            `linedef_${i}_lower_front`
           );
         } else if (backSec.floorheight < frontSec.floorheight && leftSide.bottomtexture !== '-') {
           const mat = this.getMaterialIndex(leftSide.bottomtexture);
@@ -147,7 +151,8 @@ export class GeometryBuilder {
             [v1.x, yBot, v1.y], [u0, v1_uv],
             [v1.x, yTop, v1.y], [u0, v0],
             [v2.x, yTop, v2.y], [u1, v0],
-            mat
+            mat,
+            `linedef_${i}_lower_back`
           );
         }
 
@@ -166,7 +171,8 @@ export class GeometryBuilder {
             [v2.x, yBot, v2.y], [u1, v1_uv],
             [v2.x, yTop, v2.y], [u1, v0],
             [v1.x, yTop, v1.y], [u0, v0],
-            mat
+            mat,
+            `linedef_${i}_upper_front`
           );
         } else if (backSec.ceilingheight > frontSec.ceilingheight && leftSide.toptexture !== '-') {
           const mat = this.getMaterialIndex(leftSide.toptexture);
@@ -182,7 +188,8 @@ export class GeometryBuilder {
             [v1.x, yBot, v1.y], [u0, v1_uv],
             [v1.x, yTop, v1.y], [u0, v0],
             [v2.x, yTop, v2.y], [u1, v0],
-            mat
+            mat,
+            `linedef_${i}_upper_back`
           );
         }
       }
@@ -262,7 +269,6 @@ export class GeometryBuilder {
         const i1 = triangles[t+1] * 2;
         const i2 = triangles[t+2] * 2;
         
-        // Flats are mapped 1:1 with world coordinates
         const u0 = vertices[i0]; const v0 = vertices[i0+1];
         const u1 = vertices[i1]; const v1 = vertices[i1+1];
         const u2 = vertices[i2]; const v2 = vertices[i2+1];
@@ -275,7 +281,8 @@ export class GeometryBuilder {
           v0: v2f, v1: v1f, v2: v0f, 
           normal: [0, 1, 0], materialIndex: floorMat,
           uv0: [u2, v2], uv1: [u1, v1], uv2: [u0, v0],
-          emissivity: 0.0, emissionExp: 0.0
+          emissivity: 0.0, emissionExp: 0.0,
+          polygonId: `sector_${i}_floor_tri_${t}`
         });
 
         const v0c: [number, number, number] = [vertices[i0], sector.ceilingheight, vertices[i0+1]];
@@ -287,7 +294,8 @@ export class GeometryBuilder {
             v0: v0c, v1: v1c, v2: v2c, 
             normal: [0, -1, 0], materialIndex: ceilMat,
             uv0: [u0, v0], uv1: [u1, v1], uv2: [u2, v2],
-            emissivity: 0.0, emissionExp: 0.0
+            emissivity: 0.0, emissionExp: 0.0,
+            polygonId: `sector_${i}_ceil_tri_${t}`
           });
         }
       }

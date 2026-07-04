@@ -29,6 +29,8 @@ export class WebGpuRenderer {
   
   private frameCounter = 0;
   
+  public paintedSurfaces: Map<string, { intensity: number, fwhm: number }> = new Map();
+  
   // Camera state
   private _pos: vec3 = vec3.fromValues(1056, 150, -3600); // Start position (rough E1M1 spawn)
   private _yaw = Math.PI / 2;
@@ -123,54 +125,18 @@ export class WebGpuRenderer {
       format: presentationFormat,
     });
 
-    // Create Buffers
-    const triBufferSize = triangles.length * 96; // 96 bytes per Triangle (24 floats)
+    // Create Buffers (allocating maximum possible size based on initial geometry)
+    const triBufferSize = triangles.length * 96; 
     this.triBuffer = this.device.createBuffer({
       size: triBufferSize,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-      mappedAtCreation: true,
     });
-    const triMapped = this.triBuffer.getMappedRange();
-    const triArray = new Float32Array(triMapped);
-    const triUintArray = new Uint32Array(triMapped);
-    for (let i = 0; i < triangles.length; i++) {
-      const t = triangles[i];
-      let offset = i * 24; // 24 floats
-      triArray[offset+0] = t.v0[0]; triArray[offset+1] = t.v0[1]; triArray[offset+2] = t.v0[2];
-      triUintArray[offset+3] = t.materialIndex;
-      triArray[offset+4] = t.v1[0] - t.v0[0]; triArray[offset+5] = t.v1[1] - t.v0[1]; triArray[offset+6] = t.v1[2] - t.v0[2];
-      triArray[offset+7] = t.emissivity;
-      triArray[offset+8] = t.v2[0] - t.v0[0]; triArray[offset+9] = t.v2[1] - t.v0[1]; triArray[offset+10] = t.v2[2] - t.v0[2];
-      triArray[offset+11] = t.emissionExp;
-      triArray[offset+12] = t.normal[0]; triArray[offset+13] = t.normal[1]; triArray[offset+14] = t.normal[2];
-      
-      triArray[offset+16] = t.uv0[0]; triArray[offset+17] = t.uv0[1];
-      triArray[offset+18] = t.uv1[0]; triArray[offset+19] = t.uv1[1];
-      triArray[offset+20] = t.uv2[0]; triArray[offset+21] = t.uv2[1];
-      // pad4 at +22, +23
-    }
-    this.triBuffer.unmap();
 
-    const bvhBufferSize = Math.max(bvhNodes.length * 32, 32); // 32 bytes per BvhNode
+    const bvhBufferSize = Math.max(bvhNodes.length * 32, 32); 
     this.bvhBuffer = this.device.createBuffer({
       size: Math.max(bvhBufferSize, 32),
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-      mappedAtCreation: true,
     });
-    if (bvhNodes.length > 0) {
-      const bvhMapped = this.bvhBuffer.getMappedRange();
-      const bvhArray = new Float32Array(bvhMapped);
-      const bvhUintArray = new Uint32Array(bvhMapped);
-      for (let i = 0; i < bvhNodes.length; i++) {
-        const n = bvhNodes[i];
-        let offset = i * 8; // 8 floats
-        bvhArray[offset+0] = n.aabbMin[0]; bvhArray[offset+1] = n.aabbMin[1]; bvhArray[offset+2] = n.aabbMin[2];
-        bvhUintArray[offset+3] = n.leftFirst;
-        bvhArray[offset+4] = n.aabbMax[0]; bvhArray[offset+5] = n.aabbMax[1]; bvhArray[offset+6] = n.aabbMax[2];
-        bvhUintArray[offset+7] = n.triCount;
-      }
-    }
-    this.bvhBuffer.unmap();
 
     // Reset accumulation
     this.frameCounter = 0;
@@ -222,6 +188,9 @@ export class WebGpuRenderer {
       { bytesPerRow: atlasBuilder.atlasWidth * 4, rowsPerImage: atlasBuilder.atlasHeight },
       [atlasBuilder.atlasWidth, atlasBuilder.atlasHeight]
     );
+
+    // Now populate triBuffer, bvhBuffer, and lightBuffer using our unified logic
+    this.updateGeometry(triangles, bvhNodes);
 
     this.createTextures();
 
@@ -415,6 +384,16 @@ export class WebGpuRenderer {
     }
   }
 
+  private buildLightIndices() {
+    this.lightIndices = [];
+    for (let i = 0; i < this.triangles.length; i++) {
+        if (this.triangles[i].emissivity > 0) {
+            this.lightIndices.push(i);
+        }
+    }
+    this.updateLightBuffer();
+  }
+
   private pointInTriangle(px: number, py: number, ax: number, ay: number, bx: number, by: number, cx: number, cy: number) {
     const v0x = cx - ax;
     const v0y = cy - ay;
@@ -506,7 +485,11 @@ export class WebGpuRenderer {
     }
 
     if (hitTriIdx !== -1) {
-      console.log("Painted triangle", hitTriIdx, "with intensity", intensity, "and fwhm", fwhm);
+      const hitTri = this.triangles[hitTriIdx];
+      
+      // Save to our stable map using polygonId
+      this.paintedSurfaces.set(hitTri.polygonId, { intensity, fwhm });
+
       let exp = 0.0;
       if (fwhm < 180) {
         const cosHalf = Math.cos(fwhm * 0.5 * Math.PI / 180.0);
@@ -514,8 +497,8 @@ export class WebGpuRenderer {
           exp = Math.log(0.5) / Math.log(cosHalf);
         }
       }
-      this.triangles[hitTriIdx].emissivity = intensity;
-      this.triangles[hitTriIdx].emissionExp = exp;
+      hitTri.emissivity = intensity;
+      hitTri.emissionExp = exp;
       
       const idxInLights = this.lightIndices.indexOf(hitTriIdx);
       if (intensity > 0 && idxInLights === -1) {
@@ -680,6 +663,24 @@ export class WebGpuRenderer {
   }
 
   public updateGeometry(triangles: Triangle[], bvhNodes: BvhNode[]) {
+    // Apply painted surfaces before uploading to GPU
+    for (const tri of triangles) {
+      const paint = this.paintedSurfaces.get(tri.polygonId);
+      if (paint) {
+        tri.emissivity = paint.intensity;
+        if (paint.fwhm < 180) {
+          const cosHalf = Math.cos(paint.fwhm * 0.5 * Math.PI / 180.0);
+          if (cosHalf > 0) {
+            tri.emissionExp = Math.log(0.5) / Math.log(cosHalf);
+          }
+        }
+      }
+    }
+
+    this.triangles = triangles;
+    this.bvhNodes = bvhNodes;
+    this.buildLightIndices();
+
     // Update Triangles
     const triArray = new Float32Array(triangles.length * 24);
     const triUintArray = new Uint32Array(triArray.buffer);
