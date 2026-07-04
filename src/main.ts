@@ -47,8 +47,8 @@ async function init() {
           <input type="range" id="elevationSlider" min="0" max="90" step="1" value="45" style="width: 100%;">
         </div>
         <div style="margin-top: 10px; border-top: 1px solid #444; padding-top: 10px;">
-          <label>Temporal Smear: <span id="smearVal">0.2</span></label><br>
-          <input type="range" id="smearSlider" min="0.01" max="1.0" step="0.01" value="0.2" style="width: 100%;">
+          <label>Temporal Smear: <span id="smearVal">0.8</span></label><br>
+          <input type="range" id="smearSlider" min="0.0" max="1.0" step="0.01" value="0.8" style="width: 100%;">
         </div>
         <div style="margin-top: 10px; border-top: 1px solid #444; padding-top: 10px;">
           <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
@@ -161,7 +161,8 @@ async function init() {
     });
     smearSlider.addEventListener('input', () => {
       smearVal.innerText = smearSlider.value;
-      renderer.temporalBlend = parseFloat(smearSlider.value);
+      // Invert the slider logic: 0 means no smear (blend = 1.0), 1 means max smear (blend = 0.01)
+      renderer.temporalBlend = 1.0 - (parseFloat(smearSlider.value) * 0.99);
     });
     volumetricToggle.addEventListener('change', () => {
       renderer.volumetricsEnabled = volumetricToggle.checked;
@@ -191,6 +192,7 @@ async function init() {
 
     // Input handling
     let keys: Record<string, boolean> = {};
+    const moveSpeed = 0.2;
     window.addEventListener('keydown', e => {
       keys[e.code] = true;
       if (e.code === 'Backquote') {
@@ -213,7 +215,6 @@ async function init() {
       }
     });
 
-    const speed = 3;
     const sensitivity = 0.002;
 
     interface ActiveDoor {
@@ -224,7 +225,7 @@ async function init() {
       timer: number;
     }
     const activeDoors: ActiveDoor[] = [];
-    const doorSpeed = 2.0;
+    const doorSpeed = 0.12;
 
     function checkInteraction() {
       const pX = renderer.pos[0];
@@ -309,10 +310,16 @@ async function init() {
 
       let dx = 0;
       let dz = 0;
-      if (keys['KeyW']) dz += speed;
-      if (keys['KeyS']) dz -= speed;
-      if (keys['KeyA']) dx -= speed;
-      if (keys['KeyD']) dx += speed;
+      let currentSpeed = moveSpeed;
+      
+      if (keys['ShiftLeft'] || keys['ShiftRight']) {
+        currentSpeed *= 2.0; // Double speed when running
+      }
+
+      if (keys['KeyW']) dz += currentSpeed * dt;
+      if (keys['KeyS']) dz -= currentSpeed * dt;
+      if (keys['KeyA']) dx -= currentSpeed * dt;
+      if (keys['KeyD']) dx += currentSpeed * dt;
 
       renderer.updateCamera(dx, dz, mouseDeltaX * sensitivity, -mouseDeltaY * sensitivity);
 
@@ -325,7 +332,7 @@ async function init() {
         const sector = mapData.sectors[door.sectorIdx];
         
         if (door.state === 'opening') {
-          sector.ceilingheight += doorSpeed;
+          sector.ceilingheight += doorSpeed * dt;
           if (sector.ceilingheight >= door.targetHeight) {
             sector.ceilingheight = door.targetHeight;
             door.state = 'open';
@@ -338,7 +345,7 @@ async function init() {
             door.state = 'closing';
           }
         } else if (door.state === 'closing') {
-          sector.ceilingheight -= doorSpeed;
+          sector.ceilingheight -= doorSpeed * dt;
           if (sector.ceilingheight <= door.originalHeight) {
             sector.ceilingheight = door.originalHeight;
             activeDoors.splice(i, 1);

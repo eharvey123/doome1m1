@@ -600,6 +600,11 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
     if (isMoving) {
         blendWeight = camera.temporalBlend; 
     }
+    
+    // Ensure the user's "temporal smear" setting is respected even when standing still!
+    // If they set smear to 0 (temporalBlend = 1.0), this forces blendWeight to 1.0 (no history).
+    blendWeight = max(blendWeight, camera.temporalBlend);
+
     if (camera.frameCounter == 0u || !validHistory) {
         blendWeight = 1.0;
     }
