@@ -46,8 +46,8 @@ export class GeometryBuilder {
   }
 
   public build() {
-    // Add a dummy material for missing textures
-    this.materials.push({ atlas: { u: 0, v: 0, w: 1, h: 1, width: 64, height: 64, isOpaque: true } });
+    // Add a dummy material for missing textures (samples the top-left pixel of the atlas, which is opaque)
+    this.materials.push({ atlas: { u: 0, v: 0, w: 0, h: 0, width: 64, height: 64, isOpaque: true } });
 
     this.buildWalls();
     this.buildFloorsAndCeilings();
@@ -121,7 +121,7 @@ export class GeometryBuilder {
         const backSec = this.map.sectors[leftSide.sector];
 
         // Lower wall
-        if (frontSec.floorheight < backSec.floorheight && rightSide.bottomtexture !== '-') {
+        if (frontSec.floorheight < backSec.floorheight) {
           const mat = this.getMaterialIndex(rightSide.bottomtexture);
           const yTop = backSec.floorheight;
           const yBot = frontSec.floorheight;
@@ -138,7 +138,7 @@ export class GeometryBuilder {
             mat,
             `linedef_${i}_lower_front`
           );
-        } else if (backSec.floorheight < frontSec.floorheight && leftSide.bottomtexture !== '-') {
+        } else if (backSec.floorheight < frontSec.floorheight) {
           const mat = this.getMaterialIndex(leftSide.bottomtexture);
           const yTop = frontSec.floorheight;
           const yBot = backSec.floorheight;
@@ -160,7 +160,7 @@ export class GeometryBuilder {
         // Upper wall
         const isSkyBorder = frontSec.ceilingpic === 'F_SKY1' && backSec.ceilingpic === 'F_SKY1';
         
-        if (!isSkyBorder && frontSec.ceilingheight > backSec.ceilingheight && rightSide.toptexture !== '-') {
+        if (!isSkyBorder && frontSec.ceilingheight > backSec.ceilingheight) {
           const mat = this.getMaterialIndex(rightSide.toptexture);
           const yTop = frontSec.ceilingheight;
           const yBot = backSec.ceilingheight;
@@ -177,7 +177,7 @@ export class GeometryBuilder {
             mat,
             `linedef_${i}_upper_front`
           );
-        } else if (!isSkyBorder && backSec.ceilingheight > frontSec.ceilingheight && leftSide.toptexture !== '-') {
+        } else if (!isSkyBorder && backSec.ceilingheight > frontSec.ceilingheight) {
           const mat = this.getMaterialIndex(leftSide.toptexture);
           const yTop = backSec.ceilingheight;
           const yBot = frontSec.ceilingheight;
