@@ -250,20 +250,69 @@ export class GeometryBuilder {
         if (loop.length >= 3) loops.push(loop);
       }
 
-      const vertices: number[] = [];
-      const holeIndices: number[] = [];
-      let offset = 0;
-      
-      for (let l = 0; l < loops.length; l++) {
-        if (l > 0) holeIndices.push(offset / 2);
-        for (const vIdx of loops[l]) {
+      // Classify loops into outers and holes using signed area
+      const loopsWithArea = loops.map(loop => {
+        let area = 0;
+        for (let j = 0; j < loop.length; j++) {
+          const p1 = this.map.vertexes[loop[j]];
+          const p2 = this.map.vertexes[loop[(j + 1) % loop.length]];
+          area += p1.x * p2.y - p2.x * p1.y;
+        }
+        return { loop, area };
+      });
+
+      // DOOM outer sector boundaries are consistently wound one way, holes the other way
+      // Find the dominant sign (outer boundaries usually have larger absolute area)
+      let positiveArea = 0;
+      let negativeArea = 0;
+      for (const l of loopsWithArea) {
+        if (l.area > 0) positiveArea += l.area;
+        else negativeArea -= l.area;
+      }
+      const outerIsPositive = positiveArea > negativeArea;
+
+      const outers = loopsWithArea.filter(l => (l.area > 0) === outerIsPositive);
+      const holes = loopsWithArea.filter(l => (l.area > 0) !== outerIsPositive);
+
+      // Simple point-in-polygon test
+      const pointInPolygon = (pt: {x: number, y: number}, loop: number[]) => {
+        let isInside = false;
+        for (let j = 0, k = loop.length - 1; j < loop.length; k = j++) {
+          const vj = this.map.vertexes[loop[j]];
+          const vk = this.map.vertexes[loop[k]];
+          const intersect = ((vj.y > pt.y) !== (vk.y > pt.y))
+              && (pt.x < (vk.x - vj.x) * (pt.y - vj.y) / (vk.y - vj.y) + vj.x);
+          if (intersect) isInside = !isInside;
+        }
+        return isInside;
+      };
+
+      for (const outer of outers) {
+        const vertices: number[] = [];
+        const holeIndices: number[] = [];
+        let offset = 0;
+
+        // Add outer loop
+        for (const vIdx of outer.loop) {
           const v = this.map.vertexes[vIdx];
           vertices.push(v.x, v.y);
           offset += 2;
         }
-      }
 
-      const triangles = earcut(vertices, holeIndices);
+        // Add contained holes
+        for (const hole of holes) {
+          const pt = this.map.vertexes[hole.loop[0]];
+          if (pointInPolygon(pt, outer.loop)) {
+            holeIndices.push(offset / 2);
+            for (const vIdx of hole.loop) {
+              const v = this.map.vertexes[vIdx];
+              vertices.push(v.x, v.y);
+              offset += 2;
+            }
+          }
+        }
+
+        const triangles = earcut(vertices, holeIndices);
       
       for (let t = 0; t < triangles.length; t += 3) {
         const i0 = triangles[t] * 2;
@@ -300,6 +349,7 @@ export class GeometryBuilder {
           });
         }
       }
+    }
     }
   }
 }
