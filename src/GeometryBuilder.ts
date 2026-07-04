@@ -158,7 +158,9 @@ export class GeometryBuilder {
         }
 
         // Upper wall
-        if (frontSec.ceilingheight > backSec.ceilingheight && rightSide.toptexture !== '-') {
+        const isSkyBorder = frontSec.ceilingpic === 'F_SKY1' && backSec.ceilingpic === 'F_SKY1';
+        
+        if (!isSkyBorder && frontSec.ceilingheight > backSec.ceilingheight && rightSide.toptexture !== '-') {
           const mat = this.getMaterialIndex(rightSide.toptexture);
           const yTop = frontSec.ceilingheight;
           const yBot = backSec.ceilingheight;
@@ -175,7 +177,7 @@ export class GeometryBuilder {
             mat,
             `linedef_${i}_upper_front`
           );
-        } else if (backSec.ceilingheight > frontSec.ceilingheight && leftSide.toptexture !== '-') {
+        } else if (!isSkyBorder && backSec.ceilingheight > frontSec.ceilingheight && leftSide.toptexture !== '-') {
           const mat = this.getMaterialIndex(leftSide.toptexture);
           const yTop = backSec.ceilingheight;
           const yBot = frontSec.ceilingheight;
