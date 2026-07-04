@@ -1,37 +1,313 @@
 {
   "sliders": {
-    "intensity": "3.5",
+    "intensity": "0",
     "fwhm": "180",
-    "scale": "0.4",
+    "spec": "0.35",
+    "scale": "0.3",
     "ambient": "0.05",
     "sky": "1",
     "azimuth": "45",
     "elevation": "45",
-    "smear": "0.12",
+    "smear": "0.8",
     "volumetric": false,
     "fog": "0.002",
     "bounces": "2"
   },
   "paintedSurfaces": [
     [
-      "sector_39_floor_tri_24",
+      "sector_38_floor_tri_45",
       {
-        "intensity": 5,
-        "fwhm": 180
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0.7
+      }
+    ],
+    [
+      "sector_38_floor_tri_51",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0.7
+      }
+    ],
+    [
+      "sector_38_floor_tri_63",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0.7
+      }
+    ],
+    [
+      "sector_38_floor_tri_36",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0.7
+      }
+    ],
+    [
+      "sector_38_floor_tri_57",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0.7
+      }
+    ],
+    [
+      "sector_38_floor_tri_15",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0.7
+      }
+    ],
+    [
+      "sector_38_floor_tri_69",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0.7
+      }
+    ],
+    [
+      "sector_41_floor_tri_18",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0.7
+      }
+    ],
+    [
+      "sector_38_floor_tri_33",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0.7
+      }
+    ],
+    [
+      "sector_41_floor_tri_12",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0.7
+      }
+    ],
+    [
+      "sector_41_floor_tri_15",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 1
+      }
+    ],
+    [
+      "sector_41_floor_tri_21",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0.7
+      }
+    ],
+    [
+      "sector_41_floor_tri_9",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0.7
+      }
+    ],
+    [
+      "sector_24_floor_tri_30",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 1
+      }
+    ],
+    [
+      "sector_24_floor_tri_51",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 1
+      }
+    ],
+    [
+      "sector_24_floor_tri_57",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 1
+      }
+    ],
+    [
+      "sector_24_floor_tri_54",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 1
+      }
+    ],
+    [
+      "linedef_79_lower_front_tri_0",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0.7
+      }
+    ],
+    [
+      "sector_24_floor_tri_60",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0.7
+      }
+    ],
+    [
+      "sector_24_floor_tri_48",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 1
+      }
+    ],
+    [
+      "sector_24_floor_tri_39",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 1
+      }
+    ],
+    [
+      "sector_24_floor_tri_24",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0.7
+      }
+    ],
+    [
+      "sector_24_floor_tri_12",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 1
+      }
+    ],
+    [
+      "sector_41_floor_tri_6",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 1
       }
     ],
     [
       "sector_39_floor_tri_6",
       {
-        "intensity": 5,
-        "fwhm": 180
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 1
       }
     ],
     [
       "sector_39_floor_tri_15",
       {
-        "intensity": 5,
-        "fwhm": 180
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 1
+      }
+    ],
+    [
+      "sector_39_floor_tri_24",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 1
+      }
+    ],
+    [
+      "sector_39_floor_tri_27",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 1
+      }
+    ],
+    [
+      "sector_39_floor_tri_9",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 1
+      }
+    ],
+    [
+      "sector_39_floor_tri_18",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 1
+      }
+    ],
+    [
+      "sector_39_floor_tri_0",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 1
+      }
+    ],
+    [
+      "sector_39_floor_tri_21",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 1
+      }
+    ],
+    [
+      "sector_39_floor_tri_3",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 1
+      }
+    ],
+    [
+      "sector_39_floor_tri_12",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 1
+      }
+    ],
+    [
+      "sector_13_floor_tri_12",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0.35
+      }
+    ],
+    [
+      "sector_13_floor_tri_0",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0.35
+      }
+    ],
+    [
+      "sector_13_floor_tri_15",
+      {
+        "intensity": 0,
+        "fwhm": 180,
+        "specularity": 0.35
       }
     ]
   ]

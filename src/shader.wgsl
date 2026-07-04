@@ -6,7 +6,7 @@ struct Triangle {
     edge2: vec3<f32>,
     emissionExp: f32,
     normal: vec3<f32>,
-    pad3: u32,
+    specularity: f32,
     uv0: vec2<f32>,
     uv1: vec2<f32>,
     uv2: vec2<f32>,
@@ -283,6 +283,15 @@ fn randomHemisphereDir(normal: vec3<f32>, seed: ptr<function, u32>) -> vec3<f32>
     return u * x + v * y + w * z;
 }
 
+fn randomDirection(seed: ptr<function, u32>) -> vec3<f32> {
+    let r1 = rand_xorshift(seed);
+    let r2 = rand_xorshift(seed);
+    let phi = 2.0 * 3.1415926535 * r1;
+    let z = 1.0 - 2.0 * r2;
+    let r = sqrt(max(0.0, 1.0 - z * z));
+    return vec3(r * cos(phi), r * sin(phi), z);
+}
+
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
     let dimensions = textureDimensions(historyTexWrite);
@@ -437,87 +446,99 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
             let ambient = texColor * camera.ambientLight;
             color += throughput * (emission + ambient);
             
-            // Pure Lambertian diffuse reflection
-            // Cosine term is implicitly handled by cosine-weighted hemisphere sampling
+            // Scattering (Diffuse vs Specular based on specularity probability)
+            let isSpecular = rand_xorshift(&seed) < tri.specularity;
             
-            // Next Event Estimation (Explicit Light Sampling)
-            if (camera.numLights > 0u) {
-                // Pick a random light
-                let lightIdxStr = min(u32(rand_xorshift(&seed) * f32(camera.numLights)), camera.numLights - 1u);
-                let lightTriIdx = lightIndices[lightIdxStr];
-                let lightTri = triangles[lightTriIdx];
+            if (isSpecular) {
+                // Perfect mirror reflection
+                ray.dir = reflect(ray.dir, normal);
                 
-                // Pick a random point on the light triangle
-                let r1 = rand_xorshift(&seed);
-                let r2 = rand_xorshift(&seed);
-                let sqrt_r1 = sqrt(r1);
-                let u_light = 1.0 - sqrt_r1;
-                let v_light = r2 * sqrt_r1;
-                let w_light = 1.0 - u_light - v_light;
+                // For a mirror, don't tint fully with the diffuse albedo (keeps reflections bright/clear)
+                throughput *= mix(vec3<f32>(1.0), texColor, 0.1); 
+            } else {
+                // Pure Lambertian diffuse reflection
+                ray.dir = normalize(normal + randomDirection(&seed));
                 
-                let lightPoint = lightTri.v0 + lightTri.edge1 * v_light + lightTri.edge2 * w_light;
-                let lightDirUnnorm = lightPoint - hitPoint;
-                let lightDist = length(lightDirUnnorm);
-                let lightDir = lightDirUnnorm / lightDist;
-                
-                let cosLight = dot(lightTri.normal, -lightDir);
-                let cosSurface = dot(normal, lightDir);
-                
-                if (cosLight > 0.0 && cosSurface > 0.0) {
-                    // Trace shadow ray
-                    var shadowRay: Ray;
-                    shadowRay.origin = hitPoint + normal * 0.001;
-                    shadowRay.dir = lightDir;
-                    shadowRay.invDir = 1.0 / lightDir;
+                // Next Event Estimation (Explicit Light Sampling)
+                if (camera.numLights > 0u) {
+                    // Pick a random light
+                    let lightIdxStr = min(u32(rand_xorshift(&seed) * f32(camera.numLights)), camera.numLights - 1u);
+                    let lightTriIdx = lightIndices[lightIdxStr];
+                    let lightTri = triangles[lightTriIdx];
                     
-                    if (!bvhIntersectShadow(shadowRay, lightDist - 0.01)) {
-                        let edge1 = lightTri.edge1;
-                        let edge2 = lightTri.edge2;
-                        let lightArea = length(cross(edge1, edge2)) * 0.5;
+                    // Pick a random point on the light triangle
+                    let r1 = rand_xorshift(&seed);
+                    let r2 = rand_xorshift(&seed);
+                    let sqrt_r1 = sqrt(r1);
+                    let u_light = 1.0 - sqrt_r1;
+                    let v_light = r2 * sqrt_r1;
+                    let w_light = 1.0 - u_light - v_light;
+                    
+                    let lightPoint = lightTri.v0 + lightTri.edge1 * v_light + lightTri.edge2 * w_light;
+                    let lightDirUnnorm = lightPoint - hitPoint;
+                    let lightDist = length(lightDirUnnorm);
+                    let lightDir = lightDirUnnorm / lightDist;
+                    
+                    let cosLight = dot(lightTri.normal, -lightDir);
+                    let cosSurface = dot(normal, lightDir);
+                    
+                    if (cosLight > 0.0 && cosSurface > 0.0) {
+                        // Trace shadow ray
+                        var shadowRay: Ray;
+                        shadowRay.origin = hitPoint + normal * 0.001;
+                        shadowRay.dir = lightDir;
+                        shadowRay.invDir = 1.0 / lightDir;
                         
-                        // Solid angle = area * cos(theta) / r^2
-                        let solidAngle = (lightArea * cosLight) / (lightDist * lightDist);
-                        
-                        var lightEmissionMultiplier = 1.0;
-                        if (lightTri.emissionExp > 0.0) {
-                            lightEmissionMultiplier = pow(cosLight, lightTri.emissionExp) * (lightTri.emissionExp + 1.0);
+                        if (!bvhIntersectShadow(shadowRay, lightDist - 0.01)) {
+                            let edge1 = lightTri.edge1;
+                            let edge2 = lightTri.edge2;
+                            let lightArea = length(cross(edge1, edge2)) * 0.5;
+                            
+                            // Solid angle = area * cos(theta) / r^2
+                            let solidAngle = (lightArea * cosLight) / (lightDist * lightDist);
+                            
+                            var lightEmissionMultiplier = 1.0;
+                            if (lightTri.emissionExp > 0.0) {
+                                lightEmissionMultiplier = pow(cosLight, lightTri.emissionExp) * (lightTri.emissionExp + 1.0);
+                            }
+                            
+                            let lightMat = materials[lightTri.materialIndex];
+                            let lightUV = (1.0 - u_light - v_light) * lightTri.uv0 + u_light * lightTri.uv1 + v_light * lightTri.uv2;
+                            let lSampleU = lightMat.u + fract(lightUV.x / lightMat.width) * lightMat.w;
+                            let lSampleV = lightMat.v + fract(lightUV.y / lightMat.height) * lightMat.h;
+                            let lTexColor = textureSampleLevel(atlasTex, atlasSamp, vec2<f32>(lSampleU, lSampleV), 0.0).rgb;
+                            
+                            let lightRadiance = lTexColor * lightTri.emissivity * lightEmissionMultiplier;
+                            
+                            
+                            // Add NEE contribution. (throughput * texColor is our surface BRDF factor here)
+                            color += throughput * texColor * lightRadiance * (solidAngle / 3.14159) * f32(camera.numLights);
                         }
-                        
-                        let lightMat = materials[lightTri.materialIndex];
-                        let lightUV = (1.0 - u_light - v_light) * lightTri.uv0 + u_light * lightTri.uv1 + v_light * lightTri.uv2;
-                        let lSampleU = lightMat.u + fract(lightUV.x / lightMat.width) * lightMat.w;
-                        let lSampleV = lightMat.v + fract(lightUV.y / lightMat.height) * lightMat.h;
-                        let lTexColor = textureSampleLevel(atlasTex, atlasSamp, vec2<f32>(lSampleU, lSampleV), 0.0).rgb;
-                        
-                        let lightRadiance = lTexColor * lightTri.emissivity * lightEmissionMultiplier;
-                        
-                        // Add NEE contribution. (throughput * texColor is our surface BRDF factor here)
-                        color += throughput * texColor * lightRadiance * (solidAngle / 3.14159) * f32(camera.numLights);
                     }
                 }
-            }
-            
-            throughput *= texColor;
-            
-            // Surface Sun NEE
-            let sunCos = dot(normal, camera.sunDir);
-            if (sunCos > 0.0) {
-                var sunRay: Ray;
-                sunRay.origin = hitPoint + normal * 0.001;
-                sunRay.dir = camera.sunDir;
-                sunRay.invDir = 1.0 / camera.sunDir;
-                if (!bvhIntersectShadow(sunRay, 1e28)) {
-                    let sunRadiance = vec3(1.0, 0.9, 0.8) * camera.skyLight * 5.0;
-                    var sunTransmittance = 1.0;
-                    if (camera.volumetricsEnabled == 1u) {
-                        sunTransmittance = exp(-camera.fogDensity * 50.0);
+                
+                throughput *= texColor;
+                
+                // Surface Sun NEE
+                let sunCos = dot(normal, camera.sunDir);
+                if (sunCos > 0.0) {
+                    var sunRay: Ray;
+                    sunRay.origin = hitPoint + normal * 0.001;
+                    sunRay.dir = camera.sunDir;
+                    sunRay.invDir = 1.0 / camera.sunDir;
+                    
+                    if (!bvhIntersectShadow(sunRay, 100000.0)) {
+                        let sunRadiance = vec3(1.0, 0.9, 0.8) * camera.skyLight * 5.0;
+                        var sunTransmittance = 1.0;
+                        if (camera.volumetricsEnabled == 1u) {
+                            sunTransmittance = exp(-camera.fogDensity * 50.0);
+                        }
+                        color += throughput * sunRadiance * (sunCos / 3.14159) * sunTransmittance;
                     }
-                    color += throughput * sunRadiance * (sunCos / 3.14159) * sunTransmittance;
                 }
             }
             
             ray.origin = hitPoint + normal * 0.001;
-            ray.dir = randomHemisphereDir(normal, &seed);
             ray.invDir = 1.0 / ray.dir;
             } // End of Surface Hit
             

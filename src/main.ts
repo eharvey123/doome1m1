@@ -25,6 +25,9 @@ async function init() {
         <div style="margin-top: 10px; border-top: 1px solid #444; padding-top: 10px;">
           <label>Emission FWHM (Degrees): <span id="fwhmVal">180</span></label><br>
           <input type="range" id="fwhmSlider" min="1" max="180" step="1" value="180" style="width: 100%;">
+          
+          <label>Specularity: <span id="specVal">0.0</span></label><br>
+          <input type="range" id="specSlider" min="0" max="1" step="0.05" value="0" style="width: 100%;">
         </div>
         <div style="margin-top: 10px; border-top: 1px solid #444; padding-top: 10px;">
           <label>Render Scale: <span id="scaleVal">0.3</span></label><br>
@@ -142,8 +145,12 @@ async function init() {
     }
 
     if (savedConfig && savedConfig.paintedSurfaces) {
-      const parsedMap = new Map(savedConfig.paintedSurfaces as [string, { intensity: number, fwhm: number }][]);
-      renderer.paintedSurfaces = parsedMap;
+      const parsedMap = new Map(savedConfig.paintedSurfaces as [string, { intensity: number, fwhm: number, specularity?: number }][]);
+      // Normalize loaded map
+      for (const val of parsedMap.values()) {
+        if (val.specularity === undefined) val.specularity = 0.0;
+      }
+      renderer.paintedSurfaces = parsedMap as Map<string, { intensity: number, fwhm: number, specularity: number }>;
     }
 
     await renderer.init(orderedTriangles, nodes, mapData, materials, atlasBuilder);
@@ -159,6 +166,8 @@ async function init() {
     const intensityVal = document.querySelector<HTMLElement>('#intensityVal')!;
     const fwhmSlider = document.querySelector<HTMLInputElement>('#fwhmSlider')!;
     const fwhmVal = document.querySelector<HTMLElement>('#fwhmVal')!;
+    const specSlider = document.querySelector<HTMLInputElement>('#specSlider')!;
+    const specVal = document.querySelector<HTMLElement>('#specVal')!;
     const scaleSlider = document.querySelector<HTMLInputElement>('#scaleSlider')!;
     const scaleVal = document.querySelector<HTMLElement>('#scaleVal')!;
     const ambientSlider = document.querySelector<HTMLInputElement>('#ambientSlider')!;
@@ -189,6 +198,7 @@ async function init() {
       const s = savedConfig.sliders;
       if (s.intensity !== undefined) intensitySlider.value = s.intensity;
       if (s.fwhm !== undefined) fwhmSlider.value = s.fwhm;
+      if (s.spec !== undefined) specSlider.value = s.spec;
       if (s.scale !== undefined) scaleSlider.value = s.scale;
       if (s.ambient !== undefined) ambientSlider.value = s.ambient;
       if (s.sky !== undefined) skySlider.value = s.sky;
@@ -203,6 +213,7 @@ async function init() {
     // Initialize UI display text & Renderer State
     intensityVal.innerText = intensitySlider.value;
     fwhmVal.innerText = fwhmSlider.value;
+    specVal.innerText = specSlider.value;
     scaleVal.innerText = scaleSlider.value;
     ambientVal.innerText = ambientSlider.value;
     skyVal.innerText = skySlider.value;
@@ -229,6 +240,9 @@ async function init() {
     });
     fwhmSlider.addEventListener('input', () => {
       fwhmVal.innerText = fwhmSlider.value;
+    });
+    specSlider.addEventListener('input', () => {
+      specVal.innerText = specSlider.value;
     });
     scaleSlider.addEventListener('input', () => {
       scaleVal.innerText = scaleSlider.value;
@@ -272,6 +286,7 @@ async function init() {
         sliders: {
           intensity: intensitySlider.value,
           fwhm: fwhmSlider.value,
+          spec: specSlider.value,
           scale: scaleSlider.value,
           ambient: ambientSlider.value,
           sky: skySlider.value,
@@ -298,6 +313,7 @@ async function init() {
         sliders: {
           intensity: intensitySlider.value,
           fwhm: fwhmSlider.value,
+          spec: specSlider.value,
           scale: scaleSlider.value,
           ambient: ambientSlider.value,
           sky: skySlider.value,
@@ -331,7 +347,7 @@ async function init() {
 
     window.addEventListener('mousedown', e => {
       if (document.pointerLockElement === canvas && paintToggle.checked && e.button === 0) {
-        renderer.paintSurface(parseFloat(intensitySlider.value), parseFloat(fwhmSlider.value));
+        renderer.paintSurface(parseFloat(intensitySlider.value), parseFloat(fwhmSlider.value), parseFloat(specSlider.value));
       }
     });
 

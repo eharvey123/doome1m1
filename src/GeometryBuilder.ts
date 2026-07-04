@@ -13,6 +13,7 @@ export interface Triangle {
   uv2: [number, number];
   emissivity: number;
   emissionExp: number;
+  specularity: number;
   polygonId: string;
 }
 
@@ -80,8 +81,8 @@ export class GeometryBuilder {
 
     const normal: [number, number, number] = [nx, ny, nz];
 
-    this.triangles.push({ v0, v1, v2, normal, materialIndex, uv0, uv1, uv2, emissivity: 0.0, emissionExp: 0.0, polygonId: `${baseId}_tri_0` });
-    this.triangles.push({ v0, v1: v2, v2: v3, normal, materialIndex, uv0, uv1: uv2, uv2: uv3, emissivity: 0.0, emissionExp: 0.0, polygonId: `${baseId}_tri_1` });
+    this.triangles.push({ v0, v1, v2, normal, materialIndex, uv0, uv1, uv2, emissivity: 0.0, emissionExp: 0.0, specularity: 0.0, polygonId: `${baseId}_tri_0` });
+    this.triangles.push({ v0, v1: v2, v2: v3, normal, materialIndex, uv0, uv1: uv2, uv2: uv3, emissivity: 0.0, emissionExp: 0.0, specularity: 0.0, polygonId: `${baseId}_tri_1` });
   }
 
   private buildWalls() {
@@ -281,7 +282,7 @@ export class GeometryBuilder {
           v0: v2f, v1: v1f, v2: v0f, 
           normal: [0, 1, 0], materialIndex: floorMat,
           uv0: [u2, v2], uv1: [u1, v1], uv2: [u0, v0],
-          emissivity: 0.0, emissionExp: 0.0,
+          emissivity: 0.0, emissionExp: 0.0, specularity: 0.0,
           polygonId: `sector_${i}_floor_tri_${t}`
         });
 
@@ -294,7 +295,7 @@ export class GeometryBuilder {
             v0: v0c, v1: v1c, v2: v2c, 
             normal: [0, -1, 0], materialIndex: ceilMat,
             uv0: [u0, v0], uv1: [u1, v1], uv2: [u2, v2],
-            emissivity: 0.0, emissionExp: 0.0,
+            emissivity: 0.0, emissionExp: 0.0, specularity: 0.0,
             polygonId: `sector_${i}_ceil_tri_${t}`
           });
         }

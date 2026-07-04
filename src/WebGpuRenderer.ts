@@ -29,7 +29,7 @@ export class WebGpuRenderer {
   
   private frameCounter = 0;
   
-  public paintedSurfaces: Map<string, { intensity: number, fwhm: number }> = new Map();
+  public paintedSurfaces: Map<string, { intensity: number, fwhm: number, specularity: number }> = new Map();
   
   // Camera state
   private _pos: vec3 = vec3.fromValues(1056, 150, -3600); // Start position (rough E1M1 spawn)
@@ -415,7 +415,9 @@ export class WebGpuRenderer {
     return (u >= 0) && (v >= 0) && (u + v <= 1);
   }
 
-  public paintSurface(intensity: number, fwhm: number) {
+  public paintSurface(intensity: number, fwhm: number, specularity: number) {
+    if (!this.triBuffer) return;
+
     // Determine ray direction
     const dir = vec3.fromValues(
       Math.cos(this.pitch) * Math.cos(this._yaw),
@@ -423,16 +425,20 @@ export class WebGpuRenderer {
       Math.cos(this.pitch) * Math.sin(this._yaw)
     );
     vec3.normalize(dir, dir);
-
+    
+    // Check intersection with all triangles (BVH)
     let hitT = Infinity;
     let hitTriIdx = -1;
 
-    // Simple recursive or iterative traversal
-    const stack: number[] = [0]; // root
-    const invDir = vec3.fromValues(1 / dir[0], 1 / dir[1], 1 / dir[2]);
+    // Simple stack-based BVH traversal
+    const stack = new Int32Array(64);
+    let stackPtr = 0;
+    stack[stackPtr++] = 0; // Root node
 
-    while (stack.length > 0) {
-      const nodeIdx = stack.pop()!;
+    const invDir = [1.0/dir[0], 1.0/dir[1], 1.0/dir[2]];
+
+    while (stackPtr > 0) {
+      const nodeIdx = stack[--stackPtr];
       const node = this.bvhNodes[nodeIdx];
 
       // AABB intersect
@@ -479,8 +485,8 @@ export class WebGpuRenderer {
           }
         }
       } else {
-        stack.push(node.leftFirst + 1); // Right
-        stack.push(node.leftFirst);     // Left
+        stack[stackPtr++] = node.leftFirst + 1; // Right
+        stack[stackPtr++] = node.leftFirst;     // Left
       }
     }
 
@@ -488,7 +494,7 @@ export class WebGpuRenderer {
       const hitTri = this.triangles[hitTriIdx];
       
       // Save to our stable map using polygonId
-      this.paintedSurfaces.set(hitTri.polygonId, { intensity, fwhm });
+      this.paintedSurfaces.set(hitTri.polygonId, { intensity, fwhm, specularity });
 
       let exp = 0.0;
       if (fwhm < 180) {
@@ -499,6 +505,7 @@ export class WebGpuRenderer {
       }
       hitTri.emissivity = intensity;
       hitTri.emissionExp = exp;
+      hitTri.specularity = specularity;
       
       const idxInLights = this.lightIndices.indexOf(hitTriIdx);
       if (intensity > 0 && idxInLights === -1) {
@@ -511,11 +518,19 @@ export class WebGpuRenderer {
       
       // Update GPU buffer
       // Tri struct size = 96 bytes. Emissivity is at byte offset 28 (7th float)
-      const byteOffset = hitTriIdx * 96 + 28;
+      // Specularity is at byte offset 60 (15th float)
+      const byteOffsetIntensity = hitTriIdx * 96 + 28;
       this.device.queue.writeBuffer(
         this.triBuffer,
-        byteOffset,
+        byteOffsetIntensity,
         new Float32Array([intensity])
+      );
+      
+      const byteOffsetSpecularity = hitTriIdx * 96 + 60;
+      this.device.queue.writeBuffer(
+        this.triBuffer,
+        byteOffsetSpecularity,
+        new Float32Array([specularity])
       );
 
       // emissionExp is at byte offset 44 (11th float)
@@ -674,6 +689,7 @@ export class WebGpuRenderer {
             tri.emissionExp = Math.log(0.5) / Math.log(cosHalf);
           }
         }
+        tri.specularity = paint.specularity || 0.0;
       }
     }
 
@@ -694,6 +710,7 @@ export class WebGpuRenderer {
       triArray[offset+8] = t.v2[0] - t.v0[0]; triArray[offset+9] = t.v2[1] - t.v0[1]; triArray[offset+10] = t.v2[2] - t.v0[2];
       triArray[offset+11] = t.emissionExp;
       triArray[offset+12] = t.normal[0]; triArray[offset+13] = t.normal[1]; triArray[offset+14] = t.normal[2];
+      triArray[offset+15] = t.specularity;
       
       triArray[offset+16] = t.uv0[0]; triArray[offset+17] = t.uv0[1];
       triArray[offset+18] = t.uv1[0]; triArray[offset+19] = t.uv1[1];
