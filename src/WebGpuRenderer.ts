@@ -38,7 +38,7 @@ export class WebGpuRenderer {
   private _renderScale = 0.3;
   private _temporalBlend = 0.2;
   private framesStill = 0;
-  private _volumetricsEnabled = true;
+  private _volumetricsEnabled = false;
   private _fogDensity = 0.001;
   private _sunDir: vec3 = vec3.normalize(vec3.create(), vec3.fromValues(1, 1, 1));
   private _maxBounces = 2;

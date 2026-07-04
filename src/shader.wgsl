@@ -543,7 +543,16 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
             let sampleV = camera.skyUV.y + finalSkyV * camera.skyUV.w;
             let skyTex = textureSampleLevel(atlasTex, atlasSamp, vec2<f32>(sampleU, sampleV), 0.0).rgb;
             
-            color += throughput * skyTex * camera.skyLight * 3.0;
+            var finalSkyColor = skyTex;
+            
+            // Draw the sun disk on top of the sky texture
+            let sunDot = dot(ray.dir, camera.sunDir);
+            if (sunDot > 0.999) {
+                // The sun brightness is controlled by skyLight
+                finalSkyColor += vec3(1.0, 0.9, 0.8) * camera.skyLight * 5.0;
+            }
+            
+            color += throughput * finalSkyColor;
             break;
         }
     }
