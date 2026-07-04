@@ -11,7 +11,7 @@ async function init() {
     <div id="ui" style="position: absolute; top: 10px; left: 10px; z-index: 10; background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px; max-width: 350px; color: white;">
       <h2 style="margin-top: 0;">WebGPU Doom Path Tracer</h2>
       <p id="status">Loading DOOM1.WAD...</p>
-      <p style="font-size: 0.9em; color: #ccc;">Click on the canvas to lock pointer. Use WASD to move.</p>
+      <p style="font-size: 0.9em; color: #ccc;">Click on the canvas to lock pointer. Use WASD to move. Press '~' to toggle settings.</p>
       
       <div id="paint-ui" style="display: none; background: rgba(0,0,0,0.8); padding: 10px; border-radius: 8px; margin-top: 10px; border: 1px solid #444;">
         <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
@@ -27,8 +27,8 @@ async function init() {
           <input type="range" id="fwhmSlider" min="1" max="180" step="1" value="180" style="width: 100%;">
         </div>
         <div style="margin-top: 10px; border-top: 1px solid #444; padding-top: 10px;">
-          <label>Render Scale: <span id="scaleVal">1.0</span></label><br>
-          <input type="range" id="scaleSlider" min="0.1" max="1.0" step="0.1" value="1.0" style="width: 100%;">
+          <label>Render Scale: <span id="scaleVal">0.3</span></label><br>
+          <input type="range" id="scaleSlider" min="0.1" max="1.0" step="0.1" value="0.3" style="width: 100%;">
         </div>
         <div style="margin-top: 10px; border-top: 1px solid #444; padding-top: 10px;">
           <label>Ambient Light: <span id="ambientVal">0.05</span></label><br>
@@ -111,6 +111,8 @@ async function init() {
     
     // Setup Paint UI
     document.querySelector<HTMLElement>('#paint-ui')!.style.display = 'block';
+    const ui = document.querySelector<HTMLElement>('#ui')!;
+    ui.style.display = 'none';
     const paintToggle = document.querySelector<HTMLInputElement>('#paintModeToggle')!;
     const intensitySlider = document.querySelector<HTMLInputElement>('#intensitySlider')!;
     const intensityVal = document.querySelector<HTMLElement>('#intensityVal')!;
@@ -189,7 +191,13 @@ async function init() {
 
     // Input handling
     let keys: Record<string, boolean> = {};
-    window.addEventListener('keydown', e => keys[e.code] = true);
+    window.addEventListener('keydown', e => {
+      keys[e.code] = true;
+      if (e.code === 'Backquote') {
+        const ui = document.querySelector<HTMLElement>('#ui')!;
+        ui.style.display = ui.style.display === 'none' ? 'block' : 'none';
+      }
+    });
     window.addEventListener('keyup', e => keys[e.code] = false);
 
     let mouseDeltaX = 0;

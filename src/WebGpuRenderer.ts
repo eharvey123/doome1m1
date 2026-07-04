@@ -35,7 +35,7 @@ export class WebGpuRenderer {
   private pitch = 0;
   private _ambientLight = 0.05;
   private _skyLight = 1.0;
-  private _renderScale = 1.0;
+  private _renderScale = 0.3;
   private _temporalBlend = 0.2;
   private framesStill = 0;
   private _volumetricsEnabled = false;
