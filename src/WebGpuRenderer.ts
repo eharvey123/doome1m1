@@ -30,8 +30,8 @@ export class WebGpuRenderer {
   private frameCounter = 0;
   
   // Camera state
-  private pos: vec3 = vec3.fromValues(1056, 150, -3600); // Start position (rough E1M1 spawn)
-  private yaw = Math.PI / 2;
+  private _pos: vec3 = vec3.fromValues(1056, 150, -3600); // Start position (rough E1M1 spawn)
+  private _yaw = Math.PI / 2;
   private pitch = 0;
   private _ambientLight = 0.05;
   private _skyLight = 1.0;
@@ -56,6 +56,9 @@ export class WebGpuRenderer {
     this.frameCounter = 0;
   }
   public get skyLight() { return this._skyLight; }
+
+  public get pos() { return this._pos; }
+  public get yaw() { return this._yaw; }
 
   public set renderScale(val: number) {
     if (this._renderScale !== val) {
@@ -150,7 +153,7 @@ export class WebGpuRenderer {
     const bvhBufferSize = Math.max(bvhNodes.length * 32, 32); // 32 bytes per BvhNode
     this.bvhBuffer = this.device.createBuffer({
       size: Math.max(bvhBufferSize, 32),
-      usage: GPUBufferUsage.STORAGE,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
       mappedAtCreation: true,
     });
     if (bvhNodes.length > 0) {
@@ -424,9 +427,9 @@ export class WebGpuRenderer {
   public paintSurface(intensity: number, fwhm: number) {
     // Determine ray direction
     const dir = vec3.fromValues(
-      Math.cos(this.pitch) * Math.cos(this.yaw),
+      Math.cos(this.pitch) * Math.cos(this._yaw),
       Math.sin(this.pitch),
-      Math.cos(this.pitch) * Math.sin(this.yaw)
+      Math.cos(this.pitch) * Math.sin(this._yaw)
     );
     vec3.normalize(dir, dir);
 
@@ -445,8 +448,8 @@ export class WebGpuRenderer {
       let tmin = -Infinity;
       let tmax = Infinity;
       for (let i = 0; i < 3; i++) {
-        const t1 = (node.aabbMin[i] - this.pos[i]) * invDir[i];
-        const t2 = (node.aabbMax[i] - this.pos[i]) * invDir[i];
+        const t1 = (node.aabbMin[i] - this._pos[i]) * invDir[i];
+        const t2 = (node.aabbMax[i] - this._pos[i]) * invDir[i];
         tmin = Math.max(tmin, Math.min(t1, t2));
         tmax = Math.min(tmax, Math.max(t1, t2));
       }
@@ -468,7 +471,7 @@ export class WebGpuRenderer {
           if (a > -0.00001 && a < 0.00001) continue; // parallel
 
           const f = 1.0 / a;
-          const s = vec3.subtract(vec3.create(), this.pos, tri.v0);
+          const s = vec3.subtract(vec3.create(), this._pos, tri.v0);
           const u = f * vec3.dot(s, h);
 
           if (u < 0.0 || u > 1.0) continue;
@@ -545,13 +548,13 @@ export class WebGpuRenderer {
       this.framesStill++;
     }
     
-    this.yaw += dyaw;
+    this._yaw += dyaw;
     this.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this.pitch + dpitch));
 
     const dir = vec3.fromValues(
-      Math.cos(this.pitch) * Math.cos(this.yaw),
+      Math.cos(this.pitch) * Math.cos(this._yaw),
       Math.sin(this.pitch),
-      Math.cos(this.pitch) * Math.sin(this.yaw)
+      Math.cos(this.pitch) * Math.sin(this._yaw)
     );
     const right = vec3.cross(vec3.create(), dir, vec3.fromValues(0, 1, 0));
     vec3.normalize(right, right);
@@ -563,10 +566,10 @@ export class WebGpuRenderer {
     vec3.scaleAndAdd(move, move, right, dx);
     move[1] = 0; // Flat movement initially
     
-    let pX = this.pos[0] + move[0];
-    let pZ = this.pos[2] + move[2];
+    let pX = this._pos[0] + move[0];
+    let pZ = this._pos[2] + move[2];
     const radius = 16;
-    const playerZ = this.pos[1] - 41;
+    const playerZ = this._pos[1] - 41;
 
     // Wall collision (3 passes for corners)
     for (let pass = 0; pass < 3; pass++) {
@@ -661,6 +664,46 @@ export class WebGpuRenderer {
     vec3.copy(this.prevDir, dir);
     vec3.copy(this.prevRight, right);
     vec3.copy(this.prevUp, up);
+  }
+
+  public updateGeometry(triangles: Triangle[], bvhNodes: BvhNode[]) {
+    // Update Triangles
+    const triArray = new Float32Array(triangles.length * 24);
+    const triUintArray = new Uint32Array(triArray.buffer);
+    for (let i = 0; i < triangles.length; i++) {
+      const t = triangles[i];
+      let offset = i * 24; // 24 floats
+      triArray[offset+0] = t.v0[0]; triArray[offset+1] = t.v0[1]; triArray[offset+2] = t.v0[2];
+      triUintArray[offset+3] = t.materialIndex;
+      triArray[offset+4] = t.v1[0] - t.v0[0]; triArray[offset+5] = t.v1[1] - t.v0[1]; triArray[offset+6] = t.v1[2] - t.v0[2];
+      triArray[offset+7] = t.emissivity;
+      triArray[offset+8] = t.v2[0] - t.v0[0]; triArray[offset+9] = t.v2[1] - t.v0[1]; triArray[offset+10] = t.v2[2] - t.v0[2];
+      triArray[offset+11] = t.emissionExp;
+      triArray[offset+12] = t.normal[0]; triArray[offset+13] = t.normal[1]; triArray[offset+14] = t.normal[2];
+      
+      triArray[offset+16] = t.uv0[0]; triArray[offset+17] = t.uv0[1];
+      triArray[offset+18] = t.uv1[0]; triArray[offset+19] = t.uv1[1];
+      triArray[offset+20] = t.uv2[0]; triArray[offset+21] = t.uv2[1];
+    }
+    this.device.queue.writeBuffer(this.triBuffer, 0, triArray.buffer);
+
+    // Update BVH
+    if (bvhNodes.length > 0) {
+      const bvhArray = new Float32Array(bvhNodes.length * 8);
+      const bvhUintArray = new Uint32Array(bvhArray.buffer);
+      for (let i = 0; i < bvhNodes.length; i++) {
+        const n = bvhNodes[i];
+        let offset = i * 8; // 8 floats
+        bvhArray[offset+0] = n.aabbMin[0]; bvhArray[offset+1] = n.aabbMin[1]; bvhArray[offset+2] = n.aabbMin[2];
+        bvhUintArray[offset+3] = n.leftFirst;
+        bvhArray[offset+4] = n.aabbMax[0]; bvhArray[offset+5] = n.aabbMax[1]; bvhArray[offset+6] = n.aabbMax[2];
+        bvhUintArray[offset+7] = n.triCount;
+      }
+      this.device.queue.writeBuffer(this.bvhBuffer, 0, bvhArray.buffer);
+    }
+    
+    // Reset accumulation
+    this.frameCounter = 0;
   }
 
   public render() {

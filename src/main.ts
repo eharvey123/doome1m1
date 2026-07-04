@@ -197,6 +197,9 @@ async function init() {
         const ui = document.querySelector<HTMLElement>('#ui')!;
         ui.style.display = ui.style.display === 'none' ? 'block' : 'none';
       }
+      if (e.code === 'Space' && !e.repeat) {
+        checkInteraction();
+      }
     });
     window.addEventListener('keyup', e => keys[e.code] = false);
 
@@ -213,6 +216,73 @@ async function init() {
     const speed = 3;
     const sensitivity = 0.002;
 
+    interface ActiveDoor {
+      sectorIdx: number;
+      targetHeight: number;
+    }
+    const activeDoors: ActiveDoor[] = [];
+    const doorSpeed = 2.0;
+
+    function checkInteraction() {
+      const pX = renderer.pos[0];
+      const pZ = renderer.pos[2];
+      const dirX = Math.cos(renderer.yaw);
+      const dirZ = Math.sin(renderer.yaw);
+      const reach = 64.0;
+      const endX = pX + dirX * reach;
+      const endZ = pZ + dirZ * reach;
+
+      let closestDist = reach;
+      let hitLinedef = null;
+
+      for (const line of mapData.linedefs) {
+        const v1 = mapData.vertexes[line.v1];
+        const v2 = mapData.vertexes[line.v2];
+        
+        const x1 = pX, y1 = pZ;
+        const x2 = endX, y2 = endZ;
+        const x3 = v1.x, y3 = v1.y;
+        const x4 = v2.x, y4 = v2.y;
+
+        const denom = (y4 - y3)*(x2 - x1) - (x4 - x3)*(y2 - y1);
+        if (denom === 0) continue;
+
+        const ua = ((x4 - x3)*(y1 - y3) - (y4 - y3)*(x1 - x3)) / denom;
+        const ub = ((x2 - x1)*(y1 - y3) - (y2 - y1)*(x1 - x3)) / denom;
+
+        if (ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1) {
+          const dist = ua * reach;
+          if (dist < closestDist) {
+            closestDist = dist;
+            hitLinedef = line;
+          }
+        }
+      }
+
+      if (hitLinedef && hitLinedef.special > 0 && hitLinedef.sidenum[1] !== -1) {
+        const side = mapData.sidedefs[hitLinedef.sidenum[1]];
+        const sector = mapData.sectors[side.sector];
+        
+        let highestNeighbor = sector.ceilingheight;
+        for (const line of mapData.linedefs) {
+          if (line.sidenum[0] !== -1 && line.sidenum[1] !== -1) {
+            const sec0 = mapData.sidedefs[line.sidenum[0]].sector;
+            const sec1 = mapData.sidedefs[line.sidenum[1]].sector;
+            if (sec0 === side.sector) highestNeighbor = Math.max(highestNeighbor, mapData.sectors[sec1].ceilingheight);
+            if (sec1 === side.sector) highestNeighbor = Math.max(highestNeighbor, mapData.sectors[sec0].ceilingheight);
+          }
+        }
+
+        if (highestNeighbor > sector.ceilingheight) {
+          const doorSectorIdx = side.sector;
+          const targetH = highestNeighbor - 4;
+          if (!activeDoors.some(d => d.sectorIdx === doorSectorIdx)) {
+            activeDoors.push({ sectorIdx: doorSectorIdx, targetHeight: targetH });
+          }
+        }
+      }
+    }
+
     function frame() {
       let dx = 0;
       let dz = 0;
@@ -225,6 +295,30 @@ async function init() {
 
       mouseDeltaX = 0;
       mouseDeltaY = 0;
+
+      let geometryChanged = false;
+      for (let i = activeDoors.length - 1; i >= 0; i--) {
+        const door = activeDoors[i];
+        const sector = mapData.sectors[door.sectorIdx];
+        if (sector.ceilingheight < door.targetHeight) {
+          sector.ceilingheight += doorSpeed;
+          if (sector.ceilingheight >= door.targetHeight) {
+            sector.ceilingheight = door.targetHeight;
+            activeDoors.splice(i, 1);
+          }
+          geometryChanged = true;
+        } else {
+          activeDoors.splice(i, 1);
+        }
+      }
+
+      if (geometryChanged) {
+        const newGeo = new GeometryBuilder(mapData, atlasBuilder);
+        const { triangles } = newGeo.build();
+        const newBvh = new BvhBuilder(triangles);
+        const { nodes, orderedTriangles } = newBvh.build();
+        renderer.updateGeometry(orderedTriangles, nodes);
+      }
 
       renderer.render();
       requestAnimationFrame(frame);
