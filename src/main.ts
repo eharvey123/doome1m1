@@ -255,9 +255,12 @@ async function init() {
 
         if (ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1) {
           const dist = ua * reach;
-          if (dist < closestDist) {
-            closestDist = dist;
-            hitLinedef = line;
+          // Only interact with special lines or solid walls (which block interaction)
+          if (line.special > 0 || line.sidenum[1] === -1) {
+            if (dist < closestDist) {
+              closestDist = dist;
+              hitLinedef = line;
+            }
           }
         }
       }
