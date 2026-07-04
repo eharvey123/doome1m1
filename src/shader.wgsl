@@ -51,6 +51,7 @@ struct Camera {
     
     sunDir: vec3<f32>,
     volumetricsEnabled: u32,
+    skyUV: vec4<f32>,
     maxBounces: u32,
     pad_end1: u32,
     pad_end2: u32,
@@ -530,12 +531,19 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
             }
         } else {
             // Hit the sky
-            let sunDot = dot(ray.dir, camera.sunDir);
-            if (sunDot > 0.999) {
-                color += throughput * vec3(1.0, 0.9, 0.8) * camera.skyLight * 5.0;
-            } else {
-                color += throughput * vec3(0.1, 0.15, 0.2) * camera.skyLight * 0.1;
-            }
+            let skyU = atan2(-ray.dir.z, ray.dir.x) / (2.0 * 3.14159) + 0.5;
+            let skyV = acos(ray.dir.y) / 3.14159;
+            
+            // Map vertically (DOOM sky texture is usually repeated 4 times horizontally, but we just wrap cylindrical)
+            let finalSkyU = fract(skyU * 4.0);
+            // Limit vertical to just upper hemisphere (0 to 0.5 in acos mapping)
+            let finalSkyV = clamp((skyV - 0.2) * 2.0, 0.0, 1.0);
+            
+            let sampleU = camera.skyUV.x + finalSkyU * camera.skyUV.z;
+            let sampleV = camera.skyUV.y + finalSkyV * camera.skyUV.w;
+            let skyTex = textureSampleLevel(atlasTex, atlasSamp, vec2<f32>(sampleU, sampleV), 0.0).rgb;
+            
+            color += throughput * skyTex * camera.skyLight * 3.0;
             break;
         }
     }

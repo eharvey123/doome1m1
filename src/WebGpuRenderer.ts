@@ -38,11 +38,12 @@ export class WebGpuRenderer {
   private _renderScale = 0.3;
   private _temporalBlend = 0.2;
   private framesStill = 0;
-  private _volumetricsEnabled = false;
-  private _fogDensity = 0.002;
-  private _sunDir = vec3.fromValues(0.5, 0.707, 0.5);
+  private _volumetricsEnabled = true;
+  private _fogDensity = 0.001;
+  private _sunDir: vec3 = vec3.normalize(vec3.create(), vec3.fromValues(1, 1, 1));
   private _maxBounces = 2;
 
+  private skyUV = new Float32Array([0,0,1,1]);
   private bvhBuffer!: GPUBuffer;
 
   public set ambientLight(val: number) {
@@ -171,8 +172,19 @@ export class WebGpuRenderer {
     }
     this.bvhBuffer.unmap();
 
+    // Reset accumulation
+    this.frameCounter = 0;
+
+    const skyTex = atlasBuilder.textureMap.get('SKY1');
+    if (skyTex) {
+      this.skyUV[0] = skyTex.u;
+      this.skyUV[1] = skyTex.v;
+      this.skyUV[2] = skyTex.w;
+      this.skyUV[3] = skyTex.h;
+    }
+
     this.cameraBuffer = this.device.createBuffer({
-      size: 40 * 4, // 40 floats (160 bytes)
+      size: 44 * 4, // 44 floats (176 bytes)
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -637,7 +649,7 @@ export class WebGpuRenderer {
     this.pos[1] += (targetY - this.pos[1]) * 0.2; 
 
     const camData = new Float32Array([
-      this.pos[0], this.pos[1], this.pos[2], 0,
+      this._pos[0], this._pos[1], this._pos[2], 0,
       dir[0], dir[1], dir[2], this._ambientLight,
       right[0], right[1], right[2], this._skyLight,
       up[0], up[1], up[2], this.lightIndices.length,
@@ -648,6 +660,7 @@ export class WebGpuRenderer {
       this.prevUp[0], this.prevUp[1], this.prevUp[2], this._fogDensity,
       
       this._sunDir[0], this._sunDir[1], this._sunDir[2], 0,
+      this.skyUV[0], this.skyUV[1], this.skyUV[2], this.skyUV[3],
       0, 0, 0, 0,
     ]);
     const camUint = new Uint32Array(camData.buffer);
@@ -655,7 +668,7 @@ export class WebGpuRenderer {
     camUint[15] = this.lightIndices.length;
     camUint[23] = this.framesStill;
     camUint[35] = this._volumetricsEnabled ? 1 : 0;
-    camUint[36] = this._maxBounces;
+    camUint[40] = this._maxBounces;
 
     this.device.queue.writeBuffer(this.cameraBuffer, 0, camData);
     

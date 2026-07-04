@@ -36,6 +36,9 @@ export class TextureAtlasBuilder {
     const requiredTextures = new Set<string>();
     const requiredFlats = new Set<string>();
 
+    // Hardcode SKY1 for the sky renderer
+    requiredTextures.add('SKY1');
+
     for (const side of this.mapData.sidedefs) {
       if (side.toptexture !== '-') requiredTextures.add(side.toptexture);
       if (side.bottomtexture !== '-') requiredTextures.add(side.bottomtexture);
