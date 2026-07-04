@@ -73,7 +73,7 @@ async function init() {
   `;
 
   try {
-    const response = await fetch('/DOOM1.WAD');
+    const response = await fetch(import.meta.env.BASE_URL + 'DOOM1.WAD');
     if (!response.ok) throw new Error("Failed to load WAD: " + response.statusText);
 
     const arrayBuffer = await response.arrayBuffer();
