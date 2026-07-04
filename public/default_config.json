@@ -8,7 +8,7 @@
     "sky": "2.3",
     "azimuth": "22",
     "elevation": "23",
-    "smear": "0",
+    "smear": "1",
     "volumetric": false,
     "fog": "0.002",
     "bounces": "2"
