@@ -219,6 +219,9 @@ async function init() {
     interface ActiveDoor {
       sectorIdx: number;
       targetHeight: number;
+      originalHeight: number;
+      state: 'opening' | 'open' | 'closing';
+      timer: number;
     }
     const activeDoors: ActiveDoor[] = [];
     const doorSpeed = 2.0;
@@ -263,27 +266,44 @@ async function init() {
         const side = mapData.sidedefs[hitLinedef.sidenum[1]];
         const sector = mapData.sectors[side.sector];
         
-        let highestNeighbor = sector.ceilingheight;
+        let lowestNeighbor = Infinity;
         for (const line of mapData.linedefs) {
           if (line.sidenum[0] !== -1 && line.sidenum[1] !== -1) {
             const sec0 = mapData.sidedefs[line.sidenum[0]].sector;
             const sec1 = mapData.sidedefs[line.sidenum[1]].sector;
-            if (sec0 === side.sector) highestNeighbor = Math.max(highestNeighbor, mapData.sectors[sec1].ceilingheight);
-            if (sec1 === side.sector) highestNeighbor = Math.max(highestNeighbor, mapData.sectors[sec0].ceilingheight);
+            if (sec0 === side.sector) lowestNeighbor = Math.min(lowestNeighbor, mapData.sectors[sec1].ceilingheight);
+            if (sec1 === side.sector) lowestNeighbor = Math.min(lowestNeighbor, mapData.sectors[sec0].ceilingheight);
           }
         }
 
-        if (highestNeighbor > sector.ceilingheight) {
+        if (lowestNeighbor > sector.ceilingheight && lowestNeighbor !== Infinity) {
           const doorSectorIdx = side.sector;
-          const targetH = highestNeighbor - 4;
-          if (!activeDoors.some(d => d.sectorIdx === doorSectorIdx)) {
-            activeDoors.push({ sectorIdx: doorSectorIdx, targetHeight: targetH });
+          const targetH = lowestNeighbor - 4;
+          const existing = activeDoors.find(d => d.sectorIdx === doorSectorIdx);
+          
+          if (existing) {
+            if (existing.state === 'closing') {
+              existing.state = 'opening';
+            }
+          } else {
+            activeDoors.push({ 
+              sectorIdx: doorSectorIdx, 
+              targetHeight: targetH,
+              originalHeight: sector.ceilingheight,
+              state: 'opening',
+              timer: 0
+            });
           }
         }
       }
     }
 
-    function frame() {
+    let lastTime = 0;
+    function frame(time: number) {
+      if (lastTime === 0) lastTime = time;
+      const dt = time - lastTime;
+      lastTime = time;
+
       let dx = 0;
       let dz = 0;
       if (keys['KeyW']) dz += speed;
@@ -300,15 +320,27 @@ async function init() {
       for (let i = activeDoors.length - 1; i >= 0; i--) {
         const door = activeDoors[i];
         const sector = mapData.sectors[door.sectorIdx];
-        if (sector.ceilingheight < door.targetHeight) {
+        
+        if (door.state === 'opening') {
           sector.ceilingheight += doorSpeed;
           if (sector.ceilingheight >= door.targetHeight) {
             sector.ceilingheight = door.targetHeight;
+            door.state = 'open';
+            door.timer = 3000; // 3 seconds
+          }
+          geometryChanged = true;
+        } else if (door.state === 'open') {
+          door.timer -= dt;
+          if (door.timer <= 0) {
+            door.state = 'closing';
+          }
+        } else if (door.state === 'closing') {
+          sector.ceilingheight -= doorSpeed;
+          if (sector.ceilingheight <= door.originalHeight) {
+            sector.ceilingheight = door.originalHeight;
             activeDoors.splice(i, 1);
           }
           geometryChanged = true;
-        } else {
-          activeDoors.splice(i, 1);
         }
       }
 
